@@ -1,0 +1,12 @@
+{
+  "name": "veo-batch-director",
+  "version": "1.0.0",
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "flow-sdk": "latest",
+    "jszip": "^3.10.1",
+    "mediabunny": "latest",
+    "@mediabunny/ac3": "latest"
+  }
+}
