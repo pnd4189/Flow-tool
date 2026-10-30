@@ -1,0 +1,6 @@
+{
+  "name": "AI Batch Image Generator and Editor",
+  "description": "An advanced image generation tool that parses batch prompts (e.g. screenplays), generates high-quality images using Gemini models, supports custom delays, retries, individual recreation, ZIP downloading, and features a built-in Image Studio with Lanczos and Real-ESRGAN upscaling, resizing, and filters.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
