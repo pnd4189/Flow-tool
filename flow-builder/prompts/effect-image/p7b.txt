@@ -1,0 +1,15 @@
+EFFECT-IMAGE — ĐỢT 7B: TỐI ƯU CUỐI. CHỈ sửa services/autoPilot.ts, services/effectDirector.ts (systemInstruction + hàm mới) và components/Step1PromptInput.tsx đúng các chỗ nêu; KHÔNG viết lại file; trong văn bản JSX không viết ">" hoặc "<" trần.
+
+(1) ĐA DẠNG MÁY QUAY: chạy thật 30 prompt thì 27 clip chỉ dùng zoom_in và push_to_focus (2 kiểu nhìn gần như nhau) nên cả loạt đơn điệu. Trong effectDirector.ts thêm hàm chooseVariedMove(aiMove, recentMoves) và dùng trong chế độ tự động thay cho quy tắc 3 ảnh liên tiếp hiện tại:
+- Xếp họ: zoom gồm zoom_in, push_to_focus; pan gồm pan_left, pan_right, pan_up, pan_down; các kiểu còn lại mỗi kiểu 1 họ riêng.
+- recentMoves là 6 clip gần nhất theo thứ tự xử lý. Nếu họ của aiMove đã xuất hiện từ 3 lần trở lên trong đó, chọn kiểu đầu tiên trong vòng [pan_right, zoom_out, pan_left, orbit_sway, pan_up, handheld, pan_down] mà họ của nó xuất hiện ít nhất trong recentMoves và không trùng clip liền trước; giữ nguyên intensity (handheld thì tối đa 0.5).
+- Chỉ áp cho mục source 'ai'; 'none' và dolly_zoom không bị đổi. Nếu đổi thì aiReason giữ nguyên.
+Trong systemInstruction thêm câu: chọn camera.move theo bố cục ảnh, cảnh rộng ngang ưu tiên pan_left/pan_right/zoom_out, cảnh cao/dọc ưu tiên pan_up/pan_down, chỉ dùng push_to_focus khi có chủ thể nhỏ cần nhấn, không mặc định zoom_in.
+
+(2) SỐ LÔ KHI CHẠY TIẾP: manifest tổng thêm trường lastBatchIndex (số lô cuối đã ghi). handleManifestFilesUpload lấy max của batchIndex và lastBatchIndex, để chạy tiếp từ manifest tổng không đặt lại tên manifest_lo01.
+
+(3) autoRetryRecentFailedItems: mục đã có ảnh dùng stage 'queued_effect' như retryFailedStages (hiện dùng 'waiting' nên pumpGenerators có thể sinh lại ảnh).
+
+(4) PROMPT TRÙNG: trong khối tự động ở bước 1, nếu có prompt trùng (duplicateOf) thì hiện dòng vàng "Có N prompt trùng nhau" kèm nút "Xoá trùng" (dùng lại hàm xoá trùng đang có). Danh sách dài nên người dùng khó tự thấy.
+
+KIỂM TRA: chạy tự động 12 prompt → trong 6 clip liên tiếp bất kỳ, họ zoom xuất hiện không quá 3 lần và có các kiểu pan/zoom_out/orbit; dán file có prompt trùng → thấy dòng cảnh báo.

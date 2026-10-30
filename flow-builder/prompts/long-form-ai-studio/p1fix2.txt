@@ -1,0 +1,5 @@
+SỬA LỖI TƯ THẾ RÁC. Đã test: tách kịch bản tay xong thì ô startPose/endPose của mỗi shot bị điền sẵn chữ "Start pose for shot #1" / "End pose for shot #1", và prompt keyframe biên dịch ra "...Start pose for shot #1, Daylight." (mất hết hành động). Chỉ sửa chỗ tạo shot trong services/shotengine.ts (parseScriptToShots) và ScriptEngine.tsx nếu có, giữ nguyên mọi thứ khác.
+1. Khi tách kịch bản tay: startPose = '' và endPose = '' (rỗng). Chữ gợi ý chỉ được dùng làm placeholder của ô input, không bao giờ là giá trị.
+2. Trong compileKeyframePrompt và compileVideoPrompt: coi các giá trị khớp mẫu /^(start|end) pose for shot #\d+$/i như rỗng (để dữ liệu cũ cũng chạy đúng).
+3. Khi tách kịch bản tay: action = actionBeat (để prompt luôn có hành động).
+KIỂM TRA: tách 3 dòng, prompt keyframe start của shot 1 phải chứa câu hành động của dòng 1.

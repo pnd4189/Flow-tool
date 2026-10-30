@@ -1,0 +1,487 @@
+port
+close
+Create a Tool called "Long-Form AI Video Studio".
+
+MỤC ĐÍCH: dựng video dài 4–5 phút (30–40 shot 8 giây móc nối liền mạch) hoặc video ngắn dọc (4–10 shot), nhân vật giữ nguyên diện mạo, tạo keyframe miễn phí trước rồi mới render video theo lô.
+
+RÀNG BUỘC NỀN TẢNG (đã kiểm chứng, tuân thủ tuyệt đối):
+- Flow.download chỉ nhận base64 + mimeType trong allowlist (image/jpeg, video/mp4, application/json...), KHÔNG nhận ZIP; đuôi file phải khớp mimeType.
+- Iframe sandbox không có allow-modals: KHÔNG dùng window.confirm/alert/prompt; cần xác nhận thì dùng nút 2 bước (bấm lần 1 đổi nhãn "Click again to confirm" trong 3 giây).
+- KHÔNG dùng localStorage để nhớ dữ liệu (origin iframe đổi mỗi lần tải nên dữ liệu mất); chỉ dùng state trong phiên.
+- Flow.generate.image: { prompt, modelDisplayName ('🍌 Nano Banana 2.1' | '🍌 Nano Banana Pro' | '🍌 Nano Banana 2 Lite'), aspectRatio ('1:1'|'16:9'|'9:16'|'4:3'|'3:4'), referenceImageMediaIds?: string[] (tối đa 10) } → { base64, mimeType, mediaId }. Tạo ảnh 0 credit, tự lưu vào thư viện dự án.
+- Flow.generate.video: { prompt, modelDisplayName ('Omni 1.1 Flash' | 'Veo 3.1 - Lite' | 'Veo 3.1 - Fast' | 'Veo 3.1 - Quality'), aspectRatio ('16:9'|'9:16' — KHÔNG có 1:1), durationSeconds (4/6/8; Omni thêm 10), resolution ('360p'|'720p' — KHÔNG có 1080p/4K), firstFrameImageMediaId?, lastFrameImageMediaId? (bắt buộc kèm firstFrame) } → { base64 mp4, mimeType, mediaId }. LƯU Ý: firstFrameImageMediaId và referenceImageMediaIds loại trừ nhau, không truyền cùng lúc.
+- Flow.media.select({ filter: 'image' }) → chọn 1 ảnh có sẵn trong thư viện dự án, trả { mediaId, base64, mimeType, name }.
+- Giá credit video gói Ultra (đã đo/đối chiếu 2026-10-29, Google có thể đổi): Omni 360p: 4s=4, 6s=5, 8s=6, 10s=7; Omni 720p: 4s=7, 6s=10, 8s=12, 10s=15; Veo Lite=5, Veo Fast=10, Veo Quality=100 (mọi độ dài).
+
+GIAI ĐOẠN NÀY CHỈ BUILD những phần sau (các phần khác làm ở lần sau, đừng tự thêm):
+
+1. BỐ CỤC: dark mode (nền #0e0e0e, viền #595959, chữ trắng, phong cách Google Flow), 3 cột: trái 260px (Models & Character Vault), giữa co giãn (pha này chỉ placeholder "Storyboard — coming next phase"), phải 320px (Credit Estimator + Platform Test). Cột trái thu gọn được. UI song ngữ Việt-Anh (nhãn tiếng Việt, thuật ngữ kỹ thuật giữ tiếng Anh).
+
+2. THANH CÀI ĐẶT DỰ ÁN (đầu cột trái):
+- Chế độ: Long (16:9, mặc định 35 shot, chọn 20–40) | Short (9:16, mặc định 6 shot, chọn 4–10).
+- Video model dropdown: 'Omni 1.1 Flash' (MẶC ĐỊNH), 'Veo 3.1 - Lite', 'Veo 3.1 - Fast', 'Veo 3.1 - Quality'. Đổi model thì tự kẹp resolution và duration về giá trị model cho phép (Veo chỉ 720p và 4/6/8s; Omni thêm 360p và 10s).
+- Resolution: 720p (mặc định) | 360p (chỉ Omni, nhãn "nháp").
+- Duration: 8s mặc định.
+- Image model cho keyframe: '🍌 Nano Banana 2.1' (mặc định) | '🍌 Nano Banana Pro'.
+
+3. CHARACTER VAULT (cột trái, dưới settings):
+- Danh sách nhân vật; nút "Tạo nhân vật mới" mở form: Tên + các trường DNA (facial structure, eyes, hairstyle, skin tone, outfit, accessories — mỗi trường 1 ô), nút "Tạo ảnh reference sheet" (Flow.generate.image với prompt "Character reference sheet of [name]. [DNA các trường ghép lại]. Neutral studio lighting, front view portrait, detailed face, consistent design", aspectRatio '3:4', image model đã chọn), và nút "Chọn từ thư viện Flow" (Flow.media.select filter 'image'). Khi có ảnh: lưu { mediaId, thumbBase64 (JPEG rộng tối đa 360px, quality 0.8), DNA string }. Cho phép sửa DNA rồi tạo lại ảnh; xoá nhân vật. Card nhân vật hiện thumbnail + tên + badge "LOCKED" khi đã có ảnh.
+
+4. CREDIT ESTIMATOR (cột phải):
+- State: creditBudget mặc định 6000; ô "Credit còn lại hiện tại" + nút "Hiệu chỉnh" (đặt baseline = số nhập, đã dùng = 0); hiện nhãn cam "(chưa hiệu chỉnh)" cho tới khi hiệu chỉnh lần đầu.
+- Bảng so sánh: mỗi model một dòng — giá 1 shot (theo duration/resolution đang chọn), tổng cho số shot mục tiêu của chế độ hiện tại, và "còn lại sau khi chạy". Model đang chọn tô sáng. Dòng nào tổng vượt credit còn lại thì tô đỏ kèm chữ "vượt ngân sách". Cập nhật sống khi đổi mọi thiết lập. Ghi chú nhỏ: "Giá Ultra, đo 2026-10-29; Google có thể đổi."
+
+5. PLATFORM TEST (cột phải, panel tạm, nhãn "PHA 0 — sẽ xoá ở pha sau"):
+- Nút "Chạy test nền tảng (~4 credit)" chạy tuần tự 4 bước, hiện log trạng thái từng bước (OK / lỗi thật err.message), nếu bước ảnh lỗi thì dừng luôn (không tốn credit):
+  a) Tạo character sheet test: prompt cố định "Character reference sheet of Mira, a 28-year-old Vietnamese woman, shoulder-length black hair, warm brown eyes, wearing a beige linen trench coat" — aspectRatio '3:4', model Nano Banana 2.1 → lưu mediaId A, hiện thumbnail.
+  b) Keyframe START: prompt "Mira, a 28-year-old Vietnamese woman with shoulder-length black hair, warm brown eyes, beige linen trench coat, standing at the far end of a sunlit hotel hallway, full body, facing camera" — aspectRatio '16:9', referenceImageMediaIds [A] → mediaId B, hiện thumbnail.
+  c) Keyframe END: prompt giống bước b nhưng cuối là "walking close to the camera, one hand reaching for a door handle" — referenceImageMediaIds [A] → mediaId C, hiện thumbnail.
+  d) Video: Omni 1.1 Flash, 360p, 4s, aspectRatio '16:9', prompt "She walks forward down the hallway and reaches for the door handle. Maintain 100% identical face and outfit. (no subtitles)", firstFrameImageMediaId = B, lastFrameImageMediaId = C → hiện <video controls> kết quả; ghi credit −4 vào estimator.
+
+6. CẤU TRÚC FILE: App.tsx mỏng; tách services/types.ts, services/pricing.ts (bảng giá + hàm estimate), components/ProjectSettings.tsx, components/CharacterVault.tsx, components/CreditEstimator.tsx, components/PlatformTest.tsx. KHÔNG viết logic dài trong App.tsx.
+
+KIỂM TRA SAU KHI BUILD: đổi chế độ Long/Short được; đổi model thì resolution/duration tự kẹp đúng (chọn Veo thì mất 360p và 10s); tạo được 1 nhân vật có ảnh reference; bảng estimator tính đúng (Omni 720p 8s × 35 shot = 420); test nền tảng chạy đủ 4 bước.
+
+Tôi đã hoàn thiện công cụ Long-Form AI Video Studio đúng theo toàn bộ yêu cầu và ràng buộc nghiêm ngặt của nền tảng:
+
+Các tính năng đã triển khai:
+
+Bố cục Studio Dark Mode 3 cột:
+
+Tone màu tối (#0e0e0e, viền #595959, chữ trắng chuẩn Google Flow).
+Cột trái (260px, có nút thu gọn/mở rộng chevron_left/right).
+Cột giữa co giãn: Hiển thị placeholder "Storyboard — coming next phase".
+Cột phải (320px): Chứa Credit Estimator và Platform Test.
+Giao diện song ngữ: Nhãn tiếng Việt, thuật ngữ kỹ thuật giữ tiếng Anh (shots, aspect ratio, reference sheet, keyframe).
+
+Thanh cài đặt dự án (Project Settings):
+
+Chế độ Long (16:9, mặc định 35 shot) và Short (9:16, mặc định 6 shot).
+Video Model dropdown: Mặc định Omni 1.1 Flash, hỗ trợ Veo 3.1 - Lite, Veo 3.1 - Fast, Veo 3.1 - Quality.
+Tự động kẹp thông số: Khi chọn Veo, resolution tự kẹp về 720p (không cho chọn 360p) và duration kẹp về 4/6/8s (loại bỏ 10s).
+Image Model cho keyframe: Mặc định 🍌 Nano Banana 2.1 và 🍌 Nano Banana Pro.
+
+Character Vault:
+
+Danh sách nhân vật kèm form DNA chi tiết (Facial structure, Eyes, Hairstyle, Skin tone, Outfit, Accessories).
+Nút "Tạo ảnh reference sheet" (gọi Flow.generate.image với prompt cấu trúc, tỷ lệ 3:4, 0 credit) và "Chọn từ thư viện Flow" (Flow.media.select).
+Tạo thumbnail client-side bằng canvas nén JPEG tối đa 360px (quality 0.8).
+Thẻ nhân vật hiển thị thumbnail, tên, ID và badge "LOCKED".
+Hỗ trợ sửa DNA / tạo lại ảnh và nút xoá 2 bước ("Click again to confirm" trong 3 giây, không dùng window.confirm).
+
+Credit Estimator:
+
+State ngân sách mặc định 6000 credit, ô hiệu chỉnh kèm nút "Hiệu chỉnh" (đặt baseline mới, reset đã dùng = 0), hiển thị nhãn cam (chưa hiệu chỉnh) trước khi hiệu chỉnh.
+Bảng so sánh 4 model tự động cập nhật sống: tính giá 1 shot, tổng theo số shot mục tiêu (ví dụ: Omni 720p 8s × 35 shot = 420), và số credit còn lại sau khi render. Model đang chọn được highlight viền vàng; dòng vượt ngân sách chuyển đỏ.
+
+Platform Test (Pha 0):
+
+Nút "Chạy test nền tảng (~4 credit)" tuần tự 4 bước:
+Sheet nhân vật Mira (🍌 Nano Banana 2.1, 3:4) → lấy mediaId A.
+Keyframe START (referenceImageMediaIds = [A], 16:9) → lấy mediaId B.
+Keyframe END (referenceImageMediaIds = [A], 16:9) → lấy mediaId C.
+Render Video (Omni 1.1 Flash, 360p, 4s, 16:9, firstFrameImageMediaId = B, lastFrameImageMediaId = C).
+Tự động trừ 4 credits vào estimator khi video hoàn thành và hiển thị player <video controls> để duyệt kết quả.
+
+Mô hình mặc định được thiết lập là Omni 1.1 Flash cho video và 🍌 Nano Banana 2.1 cho ảnh. Bạn có thể thử nghiệm tạo nhân vật hoặc bấm chạy test nền tảng ngay trên giao diện!
+
+thumb_up
+thumb_down
+content_copy
+flag
+undo
+Khôi phục
+Sửa 2 lỗi trong components/PlatformTest.tsx (đã chạy test thật và xác nhận). Giữ nguyên mọi thứ khác.
+
+1. Video kết quả không hiển thị: bước d gọi Flow.generate.video thành công (có mediaId) nhưng KHÔNG có phần tử <video> nào được render trong iframe (đã kiểm tra document.querySelectorAll('video').length = 0). Sửa: sau khi có kết quả, đổi base64 mp4 sang Blob (atob theo từng đoạn nhỏ), tạo URL.createObjectURL, render <video controls muted preload="metadata" src={blobUrl}> kèm dòng meta "Omni 1.1 Flash • 4s • 360p • 16:9 • ~X MB", và revoke URL khi chạy lại test. Nếu Flow.generate.video ném lỗi thì hiện err.message thật, không tạo video.
+
+2. Estimator không trừ credit: sau khi video thành công phải ghi credit −4 vào credit state (giảm "còn lại" xuống và tăng "đã dùng" thêm 4) để bảng "còn lại sau khi chạy" cập nhật ngay; nếu video lỗi thì KHÔNG trừ.
+
+Kiểm tra lại: chạy lại test, thấy phần tử <video> phát được và "còn lại" giảm đúng 4.
+
+Đã sửa 2 lỗi trong components/PlatformTest.tsx:
+
+Hiển thị Video kết quả & Metadata:
+
+Chuyển base64 mp4 sang Blob theo chunk binary an toàn (tránh tràn call stack).
+Tạo URL.createObjectURL(blob) và giải phóng URL cũ (URL.revokeObjectURL) khi chạy lại test hoặc unmount.
+Render trực tiếp <video controls muted preload="metadata" src={blobUrl}> đảm bảo phần tử <video> luôn tồn tại trên DOM sau khi sinh thành công.
+Hiển thị dòng metadata: Omni 1.1 Flash • 4s • 360p • 16:9 • ~X MB.
+Nếu Flow.generate.video ném lỗi, bắt ngoại lệ với err.message thật và không tạo video giả lập.
+
+Khấu trừ Credit Estimator:
+
+Lệnh onDeductCredits(4) chỉ được thực thi sau khi cuộc gọi video hoàn thành thành công.
+Khi đó creditsUsed tăng thêm 4 và credit còn lại giảm đúng 4 ngay lập tức trên thanh tiêu đề và bảng so sánh. Nếu có lỗi ở bất kỳ bước nào, hoàn toàn không trừ credit.
+thumb_up
+thumb_down
+content_copy
+flag
+undo
+Khôi phục
+PHA 2 — XÂY TRUNG TÂM PANEL (Storyboard Engine). Thay placeholder "Storyboard — coming next phase" bằng engine thật. Tạo file mới services/shotengine.ts (logic thuần), components/ScriptEngine.tsx, components/ShotCard.tsx; sửa App.tsx (chỉ gắn component và nối state), services/types.ts. GIỮ NGUYÊN mọi phần đã có (settings, vault, estimator, platform test). KHÔNG viết logic dài trong App.tsx. Không dùng window.confirm/alert/prompt. Flow.generate.text(prompt, { systemInstruction, thinkingLevel: 'low' }) → { text }, 0 credit.
+
+1. KIỂU DỮ LIỆU (types.ts):
+- Scene { id, title, environment, timeOfDay, ambientDefault, lightingDefault }
+- Shot { id, sceneId, order (1-based toàn phim), actionBeat (mô tả 1 hành động rõ ràng, tiếng Anh), characterIds: string[], shotSize, cameraAngle, cameraMovement, lens, lighting, audioDialogue, audioSfx, ambient, startPose, endPose }
+- Các enum kiểu string: shotSize: 'Wide'|'Medium'|'Close-Up'|'ECU'|'POV'|'OTS'; cameraAngle: 'Eye-Level'|'Low'|'High'|'Top-Down'|'Dutch'; cameraMovement: 'Static'|'Slow Dolly In'|'Slow Dolly Out'|'Pan'|'Tilt'|'360 Orbit'|'Handheld Follow'|'Steadicam'|'Rack Focus'; lens: '24mm'|'35mm Anamorphic'|'50mm'|'85mm Bokeh'; lighting: 'Golden Hour'|'Cinematic Noir'|'Neon'|'Studio'|'Natural Daylight'|'Candlelight'.
+- Tool state: scenes: Scene[], shots: Shot[].
+
+2. TAB 1 — KỊCH BẢN THỦ CÔNG:
+- Textarea dán kịch bản; nút "Tách thành shot cards" tách theo dòng/câu thành các shot, mỗi shot 1 hành động; số shot mục tiêu lấy từ slider hiện có (nếu dư thì gộp bớt câu ngắn, nếu thiếu thì chia câu dài); tự gom mỗi 3–6 shot liên tiếp vào 1 Scene; nút "Tự chia theo scene" dùng Flow.generate.text (system instruction yêu cầu CHỈ trả JSON { scenes: [{ title, environment, timeOfDay, ambientDefault, lightingDefault, shots: [{ actionBeat, startPose, endPose, shotSize, cameraAngle, cameraMovement, lens, lighting }] }] }, actionBeat/startPose/endPose bằng tiếng Anh, còn lại giữ nguyên enum; tách câu thành shot đúng số mục tiêu; chịu hàng rào markdown, parse lỗi thì hiện err.message kèm 200 ký tự đầu phản hồi).
+- Sau khi tách: nếu Character Vault có nhân vật thì gán characterIds = [nhân vật đầu tiên] cho mọi shot mặc định.
+
+3. TAB 2 — TRÌNH TẠO KỊCH BẢN AI:
+- Form: Premise (bắt buộc), Genre, Tone, Ghi chú phong cách, nút "Viết storyboard bằng AI". Gọi Flow.generate.text với system instruction: đạo diễn phim viết storyboard hoàn chỉnh cho video [chế độ Long 35 shot / Short N shot], mỗi shot đúng 1 hành động, liên tục mạch, endPose của shot N phải khớp startPose của shot N+1 (mô tả cùng tư thế/vị trí), CHỈ trả JSON như mục 2. Nếu vault có nhân vật thì kèm tên + DNA của họ vào prompt để dùng đúng nhân vật đó.
+- Kết quả điền vào scenes/shots như Tab 1.
+
+4. DANH SÁCH SHOT CARTRIDGE (trung tâm):
+- Group theo Scene (header thu gọn được: tên scene, môi trường, time of day, nút sửa environment/ambientDefault/lightingDefault áp cho mọi shot trong scene).
+- Mỗi Shot Card: số thứ tự #N, @Character dropdown (multi-select từ vault, hiển thị tên + huy hiệu màu), actionBeat textarea, startPose + endPose (2 ô ngắn), 6 dropdown (shotSize, cameraAngle, cameraMovement, lens, lighting kế thừa mặc định của scene, sửa được), audioDialogue (lời thoại trong ngoặc kép), audioSfx, ambient (mặc định theo scene).
+- Đầu và cuối card: 2 ô trống "START FRAME" / "END FRAME" (viền nét đứt, pha sau sẽ sinh ảnh; pha này chỉ hiển thị placeholder + icon).
+- Toggle toàn cục "Seamless Frame-Chain (Auto Daisy-Chain)" đặt trên danh sách, mặc định BẬT, có dòng chú thích "Khung cuối shot N sẽ làm khung đầu shot N+1".
+- Nút thêm/xoá shot, thêm/xoá scene, kéo thứ tự không cần (dùng nút lên/xuống).
+
+5. TRÌNH BIÊN DỊCH PROMPT (services/shotengine.ts):
+- compileKeyframePrompt(shot, scene, characters, 'start'|'end'): "[shotSize] keyframe, [lens]. [DNA từng nhân vật được gắn]. [startPose/endPose] in [environment], [timeOfDay]. Lighting: [lighting]".
+- compileVideoPrompt(shot, scene, characters): "[shotSize], [cameraAngle] on [lens]. [DNA từng nhân vật]. [actionBeat] in [environment]. Smooth transition from Start Frame to End Frame via [cameraMovement]. Lighting: [lighting]. Audio: [ambient]. [SFX: audioSfx.] [Dialogue: \"audioDialogue\".] Maintain 100% identical face and outfit. (no subtitles)". DNA string là bản ghép các trường vault; shot không gắn nhân vật thì bỏ đoạn DNA.
+- Mỗi Shot Card có ô "Compiled prompt (xem trước)" read-only cập nhật sống + nút copy.
+
+6. ESTIMATOR NỐI ĐỒNG: khi đã có shots thật thì bảng estimator dùng số shot thật thay cho slider (slider chỉ còn tác dụng khi chưa có shot); hiển thị "N shot thật".
+
+KIỂM TRA: build không lỗi; dán 5 câu tách ra 5 shot gom 1 scene; AI generator sinh storyboard JSON đủ trường; đổi shotSize/lens thì compiled prompt đổi ngay; estimator dùng số shot thật.
+
+Tôi đã hoàn thành PHA 2 — Xây trung tâm Panel (Storyboard Engine) cho Long-Form AI Studio:
+
+Kiểu dữ liệu mở rộng (services/types.ts):
+Khai báo đầy đủ Scene, Shot và các chuẩn phim trường: ShotSize, CameraAngle, CameraMovement, LensType, LightingStyle.
+Dịch vụ Shot Engine thuần túy (services/shotengine.ts):
+parseScriptToShots: Tách kịch bản thủ công theo câu/dòng, tự cân bằng số lượng câu theo slider mục tiêu, tự gom 3–6 shot vào 1 Scene và tự động gắn nhân vật đầu tiên từ Character Vault.
+generateStoryboardWithAI: Gọi Flow.generate.text với system instruction đạo diễn phim chuyên nghiệp (thinkingLevel: 'low', 0 credit), yêu cầu trả JSON thuần túy gồm scenes và shots liên tục với điều kiện endPose của shot N khớp startPose của shot N+1. Có bộ xử lý bóc tách markdown fences và bắt lỗi parse JSON chi tiết (kèm 200 ký tự đầu phản hồi).
+compileKeyframePrompt & compileVideoPrompt: Bộ biên dịch prompt chuẩn hóa kết hợp DNA của nhân vật được chọn từ Vault, góc máy, chuyển động, ánh sáng và âm thanh.
+Thành phần Shot Card (components/ShotCard.tsx):
+Hiển thị số thứ tự #N, nút di chuyển lên/xuống, nút xóa.
+2 ô trống placeholder viền nét đứt START FRAME & END FRAME.
+Dropdown chọn nhiều nhân vật từ Vault với huy hiệu tag màu.
+Trường nhập Action Beat, Start Pose & End Pose, 6 dropdown điện ảnh và âm thanh.
+Ô xem trước "Compiled prompt (xem trước)" tự động cập nhật sống kèm nút copy vào clipboard.
+Storyboard Engine trung tâm (components/ScriptEngine.tsx):
+Tab 1: Kịch bản thủ công: Textarea dán kịch bản, nút "Tách thành shot cards" (thủ công) và "Tự chia theo scene" (AI - 0 credit).
+Tab 2: Trình tạo kịch bản AI: Form Premise, Genre, Tone, Ghi chú phong cách; sinh toàn bộ storyboard liên tục mạch.
+Header Scene thu gọn/mở rộng, nút sửa thuộc tính Scene Defaults áp dụng đồng loạt cho mọi shot trong scene.
+Toggle toàn cục Seamless Frame-Chain (Auto Daisy-Chain) mặc định bật.
+Đồng bộ Credit Estimator (components/CreditEstimator.tsx & App.tsx):
+Bảng so sánh Credit Estimator tự động chuyển sang hiển thị và tính toán theo N shot thật ngay khi Storyboard có dữ liệu. Slider chỉ đóng vai trò mục tiêu khi chưa phân tách shot.
+thumb_up
+thumb_down
+content_copy
+flag
+undo
+Khôi phục
+Sửa lỗi tách kịch bản thủ công trong services/shotengine.ts (đã test: dán đúng 5 dòng nhưng ra 35 shot bị chém giữa câu, ví dụ "Mira bước vào sảnh khách (phase 1)" rồi "sạn lúc bình minh. (phase 2)"). Giữ nguyên mọi phần khác.
+
+1. Tách shot: mỗi DÒNG không rỗng của textarea = đúng 1 shot (1 hành động). KHÔNG chém giữa câu, KHÔNG đệm thêm shot để đạt số slider. Chỉ khi một dòng đơn lẻ dài bất thường (không có dòng trống nào khác) mới tách dòng đó theo ranh giới câu (". ", "! ", "? ") — vẫn không bao giờ cắt giữa câu. Slider mục tiêu chỉ là gợi ý hiển thị, không ép số shot.
+2. Gom scene: mỗi 4 shot liên tiếp thành 1 scene (còn lại bao nhiêu gộp cuối). Tên scene = 6 từ đầu của shot đầu tiên trong scene (cắt ngắn 40 ký tự), không dùng chữ "SEQUENCE SEGMENT".
+3. Environment/lightingDefault/ambientDefault: mặc định RỖNG (hiển thị "(chưa đặt)" trong header scene, bấm để sửa); KHÔNG tự bịa giá trị như "High-tech interior atrium". compiled prompt bỏ đoạn "in [environment]" nếu environment rỗng, dùng "[timeOfDay] lighting" nếu lighting rỗng thì ghi "natural lighting".
+4. Estimator: "N shot thật" phải bằng số shot thực tế sau tách (5 dòng = 5 shot), không phải slider.
+
+Kiểm tra: dán đúng 5 dòng như trước phải ra 5 shot, 2 scene, không có chữ chém giữa câu, estimator hiện "5 shot thật".
+
+Đã sửa xong toàn bộ logic tách kịch bản trong services/shotengine.ts và hiển thị header trong components/ScriptEngine.tsx:
+
+Tách shot 1:1: Mỗi dòng không rỗng của textarea được ánh xạ trực tiếp thành đúng 1 shot (1 action beat). Không chia cắt giữa câu, không đệm thêm (phase 1) / (phase 2) hay shot giả để ép theo slider. Chỉ khi có duy nhất 1 dòng văn bản dài bất thường (>180 ký tự) mới tách an toàn theo dấu câu chấm/than/hỏi.
+Gom scene: Mỗi 4 shot liên tiếp được gộp thành 1 scene (còn lại bao nhiêu shot ở cuối gộp vào scene cuối). Tên scene tự động lấy tối đa 6 từ đầu của shot đầu tiên (rút gọn tối đa 40 ký tự), bỏ hoàn toàn chuỗi SEQUENCE SEGMENT.
+Giá trị mặc định: environment, ambientDefault, và lightingDefault khi tách thủ công mặc định là chuỗi rỗng "". Header scene hiển thị rõ (chưa đặt) kèm liên kết bấm để sửa nhanh. Trong compileVideoPrompt và compileKeyframePrompt, nếu environment rỗng thì lược bỏ hoàn toàn đoạn in [environment], và dùng natural lighting nếu ánh sáng chưa được gán.
+Estimator đồng bộ chính xác: Bảng Credit Estimator và thanh Topbar đọc trực tiếp shots.length, khi dán 5 dòng sẽ hiển thị chính xác "5 shot thật" thay vì lấy số slider 35.
+thumb_up
+thumb_down
+content_copy
+flag
+undo
+Khôi phục
+PHA 3 — STORYBOARD GRID & SINH KEYFRAME HÀNG LOẠT. Tạo components/StoryboardGrid.tsx, services/keyframeService.ts; sửa App.tsx (chỉ gắn và nối state), components/ShotCard.tsx (ô START/END FRAME hiển thị ảnh thật khi có). GIỮ NGUYÊN mọi phần khác. Không dùng window.confirm/alert/prompt. Flow.generate.image: { prompt, modelDisplayName, aspectRatio, referenceImageMediaIds } → { base64, mimeType, mediaId }, 0 credit, tự lưu thư viện.
+
+1. MÔ HÌNH KEYFRAME THEO CHUỖI (khi toggle Daisy-Chain BẬT):
+- Với N shot có đúng N+1 keyframe dùng chung: K0 = khung đầu shot 1; K_i (i>=1) = khung cuối shot i ĐỒNG THỜI khung đầu shot i+1. Prompt của K_i dùng endPose của shot i (và cảnh của shot i).
+- Khi toggle TẮT: mỗi shot có 2 keyframe riêng (start + end), tổng 2N.
+- Shot cuối luôn có keyframe END riêng (kể cả khi bật chuỗi).
+
+2. SINH HÀNG LOẠT:
+- Nút "Sinh toàn bộ keyframe (0 credit)" ở khu Storyboard Grid: sinh tuần tự các keyframe còn thiếu theo thứ tự; tiến trình "Đang sinh 12/36"; nút Tạm dừng/Tiếp tục/Dừng; mỗi keyframe có trạng thái (pending/done/error) và thông báo lỗi thật (err.message); lỗi tạm thời (message viết thường chứa 'tạm thời không hoạt động'|'unavailable'|'busy'|'overloaded'|'rate limit') tự thử lại tối đa 2 lần (chờ 8s rồi 20s), lỗi khác thì đánh dấu error và TIẾP TỤC keyframe kế.
+- Mỗi keyframe gọi Flow.generate.image với: prompt = compileKeyframePrompt(shot, scene, characters, 'start'|'end') đã có; aspectRatio = '16:9' nếu chế độ Long, '9:16' nếu chế độ Short; modelDisplayName = image model trong settings; referenceImageMediaIds = mảng mediaId của các nhân vật được gắn vào shot đó (rỗng thì bỏ tham số).
+- Lưu vào shot: startKeyframe { mediaId, thumbBase64 (JPEG ≤ 420px, 0.8) } và/hoặc endKeyframe tương tự. KHÔNG giữ chuỗi base64 full trong state (video sẽ dùng mediaId).
+- Sau khi sinh xong: thumbnail hiện trong ô START/END FRAME của Shot Card (viền xanh khi done), có nút "Sinh lại keyframe này" (icon refresh) từng ô.
+
+3. STORYBOARD GRID (thay/đặt cạnh Script Engine dưới dạng tab "Storyboard Grid" ở trung tâm):
+- Lưới ảnh theo thứ tự K0..KN, mỗi ảnh ghi nhãn "K12 • cuối shot 12 / đầu shot 13"; click mở lightbox xem to (nút tắt); hover hiện prompt đã dùng.
+- Thanh công cụ: "Sinh còn thiếu", "Sinh lại tất cả" (xác nhận 2 bước vì tốn thời gian), bộ đếm "X/36 keyframe".
+- Mỗi ảnh có nút xoá keyframe (xóa tham chiếu, không xoá ảnh trong thư viện Flow).
+
+4. ESTIMATOR: thêm dòng nhỏ "N keyframe (0 credit)" dưới bảng.
+
+KIỂM TRA: với 5 shot + chuỗi BẬT, bấm Sinh toàn bộ tạo đúng 6 keyframe; ảnh trong grid và trong ô START/END của 2 shot liền kề là CÙNG một ảnh (dùng chung); tắt chuỗi thì cần 10 keyframe riêng.
+Tóm tắt các thay đổi Pha 3:
+Mô hình Keyframe & Chaining (services/keyframeService.ts):
+Khi bật Daisy-Chain (mặc định): N shot tạo đúng $N+1$ keyframe logic ($K_0$ là đầu shot 1, $K_i$ dùng chung giữa cuối shot $i$ và đầu shot $i+1$, và $K_N$ là cuối shot cuối cùng). Prompt dùng endPose của shot $i$.
+Khi tắt Daisy-Chain: Mỗi shot có 2 keyframe độc lập ($2N$ keyframes).
+Sinh hàng loạt tuần tự & Tự thử lại:
+Tích hợp hàm generateSingleKeyframeWithRetry gọi Flow.generate.image với cấu hình ảnh của dự án (aspectRatio '16:9' hoặc '9:16', modelDisplayName, và mảng referenceImageMediaIds của các nhân vật được gắn vào shot).
+Tự động bắt lỗi tạm thời (unavailable, busy, overloaded, rate limit, tạm thời không hoạt động) và thử lại tối đa 2 lần (chờ 8s rồi 20s). Nếu gặp lỗi khác, gắn cờ lỗi trên slot và tiếp tục tuần tự sang keyframe tiếp theo mà không làm đứt đoạn tiến trình.
+Hỗ trợ đầy đủ bộ nút điều khiển: Tạm dừng / Tiếp tục / Dừng và hiển thị tiến trình "Đang sinh X/Y".
+Thu nhỏ thumbnail client-side thành JPEG chất lượng 0.8 ($\le 420\text{px}$) lưu vào state, không giữ chuỗi base64 gốc gây phình bộ nhớ.
+Storyboard Grid (components/StoryboardGrid.tsx):
+Thêm tab "Storyboard Grid" ở khu trung tâm bên cạnh Script Engine.
+Lưới thẻ ảnh $K_0 \dots K_N$ với nhãn chi tiết (ví dụ: K1 • Cuối shot 1 / Đầu shot 2), preview hover prompt, nút zoom xem to qua lightbox, nút sinh lại từng ô, nút xoá tham chiếu keyframe, và xác nhận 2 bước cho thao tác "Sinh lại tất cả".
+Cập nhật ô START/END trên ShotCard & Estimator:
+ShotCard.tsx: Hiển thị ảnh thật với viền xanh emerald khi hoàn thành, kèm nút refresh để sinh lại keyframe riêng lẻ.
+CreditEstimator.tsx: Bổ sung dòng thông báo rõ ràng "N keyframe (0 credit)".
+
+Bước tiếp theo có thể là Pha 4: Trình dựng & Render Video hàng loạt (nối keyframe qua firstFrameImageMediaId và lastFrameImageMediaId bằng video model đã chọn). Bạn muốn tiến hành ngay không?
+
+thumb_up
+thumb_down
+content_copy
+flag
+undo
+Khôi phục
+PHA 4 — HÀNG ĐỢI RENDER VIDEO + TẢI VỀ. Tạo components/RenderQueue.tsx, services/renderService.ts, services/downloadQueue.ts; sửa App.tsx (chỉ gắn), components/ShotCard.tsx (thêm chip trạng thái video). GIỮ NGUYÊN mọi phần khác. XOÁ HẲN components/PlatformTest.tsx và panel "PHA 0" (đã hoàn thành nhiệm vụ; credit estimator giữ nguyên). Không dùng window.confirm/alert/prompt.
+
+1. PRE-FLIGHT (tab trung tâm thứ 3 "Render Queue"):
+- Danh sách shot kèm: trạng thái keyframe (thiếu khung nào), trạng thái video (chưa render/rendering/done/error + err.message), nút render lại từng shot.
+- "Số shot sẵn sàng" = shot có đủ 2 khung (theo chuỗi). Tổng credit = số shot sẵn sàng × giá model/resolution/duration hiện tại (dùng services/pricing.ts); hiện "còn lại sau khi chạy"; CHẶN nút render nếu vượt credit còn lại (thông báo rõ); xác nhận 2 bước nếu tổng ≥ 200 hoặc > 50% credit còn lại.
+- Nút "Render tất cả shot sẵn sàng".
+
+2. HÀNG ĐỢI RENDER (services/renderService.ts + component):
+- Tuần tự 1 shot một lúc; Pause/Resume; Stop dừng sau shot hiện tại, KHÔNG bỏ kết quả shot đang chạy (credit đã tốn), các shot còn lại về pending.
+- Mỗi shot: prompt = compileVideoPrompt; Flow.generate.video({ prompt, modelDisplayName, aspectRatio theo chế độ, durationSeconds, resolution, firstFrameImageMediaId, lastFrameImageMediaId }) — khung theo chuỗi (K trước/K sau) hoặc start/end riêng khi toggle TẮT.
+- Timeout 600 giây (Promise.race); timeout thì báo "Quá thời gian chờ; video có thể vẫn được tạo, kiểm tra thư viện Flow" và KHÔNG tự thử lại. Lỗi tạm thời ('tạm thời không hoạt động'|'unavailable'|'busy'|'overloaded'|'rate limit') thử lại đúng 1 lần sau 20 giây. Lỗi 'quota'|'credit' → DỪNG cả hàng đợi. Lỗi 'safety'|'policy'|'blocked' → đánh dấu error, không thử lại.
+- Thành công: đổi base64 mp4 sang Blob (atob theo từng đoạn nhỏ), URL.createObjectURL; lưu { blobUrl, mediaId, bytes }; TRỪ credit đúng giá 1 shot vào estimator state ("đã dùng" tăng, "còn lại" giảm, bảng cập nhật ngay); render <video controls muted preload="metadata">.
+- Không chạy cùng lúc với sinh keyframe (khoá chéo 2 nút).
+
+3. VIDEO RESULTS (trong tab Render Queue, dưới hàng đợi):
+- Thẻ mỗi video: <video>, meta "Omni 1.1 Flash • 4s • 360p • 16:9 • 1.4 MB • 4 cr", nút xoá (revoke URL), checkbox chọn.
+- Tải qua MỘT hàng đợi dùng chung (downloadQueue.ts): "Tải tất cả video" / "Tải đã chọn"; tuần tự, nghỉ 1500ms giữa file, thử lại tối đa 2 lần (1.5s rồi 3s); thanh tiến trình "Đang tải i/N - tên file - x MB" + nút Cancel; tóm tắt "Đã tải X/N" + danh sách lỗi kèm nút "Tải lại mục lỗi".
+- Tên file: `${NNN}_${slug}_${modelSlug}_${sec}s.mp4` — NNN = số thứ tự shot (3 chữ số), slug từ actionBeat (bỏ dấu tiếng Việt, đ→d, thường, [^a-z0-9]→'_', cắt 30 ký tự), modelSlug: omni-flash | veo31-lite | veo31-fast | veo31-quality. Đuôi .mp4 khớp video/mp4.
+
+4. SHOT CARD: chip nhỏ dưới mỗi card: "video: done (4 cr)" / "video: chưa render" / "video: error".
+
+KIỂM TRA: với 2 shot sẵn sàng, Omni 360p 4s, bấm Render → 2 video lần lượt, credit còn lại giảm đúng 8, tải về 2 file đúng tên thứ tự.
+Hoàn thành PHA 4 — Hàng đợi Render Video & Tải về
+
+Pre-flight & Kiểm tra Sẵn sàng (RenderQueue.tsx):
+
+Thêm tab trung tâm thứ 3 "Render Queue" cạnh Script Engine và Storyboard Grid.
+Thống kê pre-flight rõ ràng: số shot sẵn sàng (đủ 2 khung theo chuỗi Daisy-Chain N+1 hoặc 2N độc lập), giá credit cho mỗi shot theo cấu hình đang chọn (Omni 1.1 Flash, Veo 3.1 - Lite, Fast, Quality), tổng credit cần và credit còn lại sau khi render.
+Nút "Render tất cả shot sẵn sàng" chặn khi không đủ credit, và tự động kích hoạt xác nhận 2 bước khi chi phí ≥ 200 credit hoặc chiếm > 50% số credit còn lại. Không sử dụng window.confirm hay alert.
+Khoá chéo thông minh: kiểm tra nếu đang chạy sinh keyframe thì vô hiệu hoá nút render.
+
+Hàng đợi Render Video (services/renderService.ts):
+
+Thực thi tuần tự 1 shot một lúc với đầy đủ nút Tạm dừng / Tiếp tục và Dừng sau shot hiện tại (không làm mất kết quả của shot đang chạy).
+Video prompt được compile chi tiết qua compileVideoPrompt kết hợp Flow.generate.video().
+Tích hợp timeout an toàn 600 giây qua Promise.race; khi timeout thông báo rõ ràng "Quá thời gian chờ (600s); video có thể vẫn được tạo, kiểm tra thư viện Flow" và không tự động thử lại gây tốn credit.
+Xử lý lỗi tạm thời (unavailable, busy, overloaded, rate limit) tự động thử lại đúng 1 lần sau 20 giây. Lỗi quota/credit dừng ngay cả hàng đợi; lỗi safety/policy báo lỗi và chuyển sang shot tiếp theo.
+Giải mã nhị phân an toàn từ base64 sang Blob và URL.createObjectURL. Trừ chính xác credit của shot đó vào bộ đếm credit còn lại ngay khi render thành công.
+
+Danh sách Kết quả & Tải về Tệp (services/downloadQueue.ts):
+
+Hiển thị video player <video controls muted preload="metadata"> kèm thông số chi tiết (Omni 1.1 Flash • 4s • 360p • 16:9 • 1.4 MB • 4 cr), nút xoá video giải phóng revokeObjectURL, và checkbox chọn tệp.
+Hàng đợi tải về duy nhất sử dụng Flow.download() cho các tệp .mp4 video/mp4. Tải tuần tự với quãng nghỉ 1500ms giữa các file, cơ chế thử lại tối đa 2 lần (sau 1.5s và 3.0s).
+Thanh tiến trình hiển thị rõ tên tệp, dung lượng MB và nút Huỷ (Cancel), cùng bảng tổng kết các mục tải lỗi kèm nút "Tải lại mục lỗi".
+Định dạng tên tệp chuẩn: ${NNN}_${slug}_${modelSlug}_${sec}s.mp4 với slug từ actionBeat loại bỏ hoàn toàn dấu tiếng Việt, ký tự đặc biệt, cắt tối đa 30 ký tự; modelSlug tương ứng omni-flash, veo31-lite, veo31-fast, veo31-quality.
+
+Cập nhật Shot Card & Tinh gọn Giao diện:
+
+Thêm chip trạng thái video dưới mỗi ShotCard: video: done (x cr), video: đang render..., video: error hoặc video: chưa render.
+Xoá hoàn toàn PlatformTest.tsx và panel PHA 0, giữ nguyên toàn bộ bộ tính CreditEstimator ở cột bên phải.
+thumb_up
+thumb_down
+content_copy
+flag
+undo
+Khôi phục
+VÒNG SỬA CUỐI + LƯU PHIÊN. Sửa các lỗi đã phát hiện khi chạy thật và thêm Lưu/Mở phiên. Giữ nguyên mọi phần khác. Không dùng window.confirm/alert/prompt. Flow.download nhận application/json.
+
+1. Lỗi hàng đợi không tự tiếp tục: sau khi shot 1 render xong, hàng đợi DỪNG luôn thay vì chạy shot 2 (phải bấm "Render (6 cr)" thủ công). Sửa processQueue/renderService để vòng lặp tuần tự chạy hết danh sách shot sẵn sàng: sau mỗi shot thành công hoặc lỗi, chuyển sang shot kế (trừ trường hợp lỗi quota/credit dừng cả hàng). Nguyên nhân có thể do đọc danh sách từ state cũ (ref chưa cập nhật sau setState) — cập nhật ref đồng bộ như mẫu đã dùng ở keyframe generation.
+
+2. Lỗi bộ đếm chọn: "Tải đã chọn (2)" trong khi chỉ có 1 video — selection giữ id của video đã bị thay thế; khi render lại/xoá video thì loại id không còn khỏi selection.
+
+3. Chữ placeholder đứng yên "Đang sinh 12/36" hiện cả khi không đang sinh gì: chỉ hiện khi đang chạy, đứng yên thì ẩn hoặc hiện "0 đang chạy".
+
+4. LƯU PHIÊN / MỞ PHIÊN (thẻ ở cột phải, trên Credit Estimator):
+- "Lưu phiên": gom { version: 1, savedAt, settings (chế độ, shotSlider, video model, resolution, duration, image model), characters (tên + các trường DNA + mediaId + thumbBase64), scenes, shots (đầy đủ trường + startKeyframe/endKeyframe { mediaId, thumbBase64 }), credit: { budget, spent, calibrated } } → JSON → Flow.download({ base64 (TextEncoder + btoa từng đoạn cho đúng Unicode), mimeType: 'application/json', filename: `lfvs-session_YYYYMMDD_HHmm.json` }). Báo "Đã lưu phiên" khi xong, lỗi thật khi thất bại.
+- "Mở phiên": input file ẩn accept .json; đọc file.text(), kiểm version === 1, khôi phục toàn bộ (model không hợp lệ thì về mặc định; keyframe khôi phục từ mediaId + thumb nên grid và ô START/END vẫn hiện ảnh, KHÔNG cần sinh lại; video đã render không lưu trong file — hiện ghi chú "Video đã render không nằm trong file phiên; ảnh gốc và video vẫn còn trong thư viện Flow"). File sai định dạng báo lỗi rõ, không phá state hiện tại.
+- Khi bấm "Tạo mới"/xoá toàn bộ storyboard thì giữ nguyên vault và credit.
+
+5. Ghi chú nhỏ ở Render Queue: "Video tự lưu vào thư viện Flow; tải về qua nút Tải tất cả."
+
+KIỂM TRA: render 2 shot liên tiếp tự chạy không cần bấm giữa chừng; Lưu phiên tải file JSON; tải lại tool, Mở phiên, storyboard + keyframe thumbnails + credit state khôi phục đúng.
+Tóm tắt các thay đổi đã thực hiện:
+
+Khắc phục lỗi dừng hàng đợi render:
+
+Trong RenderQueue.tsx, vòng lặp hàng đợi render hiện đọc danh sách shots và trạng thái credit trực tiếp qua shotsRef và creditRemainingRef đồng bộ.
+Khi shot 1 render hoàn tất, shotsRef được cập nhật tức thì và vòng lặp tự động chuyển tiếp sang shot 2 cho đến khi render hết danh sách (chỉ dừng lại khi gặp lỗi hết credit/quota).
+Nếu gặp lỗi render đơn lẻ của một shot, hệ thống ghi nhận lỗi trên shot đó và tiếp tục render các shot kế tiếp.
+
+Khắc phục lỗi bộ đếm lựa chọn tải:
+
+Thêm useEffect tự động lọc sạch các ID video không còn tồn tại trong shots khỏi selectedVideoIds khi có video bị xoá hoặc render lại. Nút tải chỉ đếm chính xác số video hiện hữu được chọn.
+
+Khắc phục chữ placeholder tiến độ:
+
+Dòng trạng thái tiến độ chỉ hiển thị khi isRendering đang là true, không còn xuất hiện khi hàng đợi ở trạng thái nghỉ.
+
+Thêm thẻ "Lưu phiên" và "Mở phiên":
+
+Đặt ở cột phải, ngay trên thẻ Credit Estimator (components/SessionCard.tsx).
+Lưu phiên: Gom đầy đủ cài đặt dự án, Character Vault (DNA, tên, mediaId, thumbnail), Scenes, Shots (kèm mediaId và thumbnail của startKeyframe/endKeyframe) và Credit state thành tệp JSON định dạng version: 1. Sử dụng Flow.download với MIME application/json và tên tệp chuẩn lfvs-session_YYYYMMDD_HHmm.json.
+Mở phiên: Input file ẩn nhận .json, kiểm tra version === 1. Khôi phục storyboard, thumbnail keyframe trực tiếp mà không cần sinh lại ảnh. Kèm thông báo: "Video đã render không nằm trong file phiên; ảnh gốc và video vẫn còn trong thư viện Flow."
+Tạo mới storyboard: Cho phép xoá sạch storyboard mà vẫn giữ nguyên Character Vault và số dư Credit.
+
+Ghi chú thư viện:
+
+Bổ sung ghi chú rõ ràng ở thanh điều khiển Render Queue: "Video tự lưu vào thư viện Flow; tải về qua nút Tải tất cả."
+
+Bạn có thể thử nghiệm lưu phiên, làm mới trang rồi mở lại phiên để kiểm tra trạng thái khôi phục keyframe và credit.
+
+thumb_up
+thumb_down
+content_copy
+flag
+undo
+Khôi phục
+CHỈ TRẢ LỜI, KHÔNG SỬA CODE, KHÔNG THAY ĐỔI GÌ TRONG TOOL. Trả lời theo đúng định nghĩa flow-sdk bạn có (chữ ký TypeScript nguyên văn); chỗ nào không chắc thì ghi "không chắc", không đoán.
+1) Flow.generate.video: liệt kê ĐẦY ĐỦ các trường của options. Có trường nào để EXTEND một video có sẵn (sourceVideoMediaId + mode 'extend'?), sourceVideoMode nhận những giá trị nào? Có numberOfVideos/seed/negativePrompt/generateAudio không? audioReferenceMediaIds lấy mediaId giọng nói từ đâu?
+2) Có được truyền referenceImageMediaIds CÙNG LÚC với firstFrameImageMediaId/lastFrameImageMediaId không (với từng model)?
+3) Flow.generate.image: referenceImageMediaIds tối đa bao nhiêu ảnh; có chế độ "chỉnh sửa ảnh" (truyền 1 ảnh gốc + prompt mô tả thay đổi) không hay chỉ là tham chiếu?
+4) Flow.upload: chữ ký, giới hạn dung lượng, có tốn credit không, ảnh upload có hiện trong thư viện dự án không?
+5) Flow.generate.text: tối đa bao nhiêu ảnh trong options.images một lần gọi, giới hạn kích thước prompt, có tốn credit không?
+6) Tool có API nào để: đặt tên/đổi tên media đã tạo, thêm clip vào Scenebuilder của Flow, đọc danh sách media trong dự án (không qua hộp chọn), hay xoá media không?
+7) Flow.media.select / selectMultiple trả về những trường nào; ảnh trả về có kèm mediaId để dùng lại làm firstFrame/reference không?
+8) Có sự kiện/callback nào khi người dùng đóng tool hoặc tải lại trang để tool kịp lưu dữ liệu không?
+
+Dưới đây là câu trả lời chi tiết và chính xác theo đặc tả kỹ thuật và định nghĩa TypeScript nguyên văn của flow-sdk:
+
+1) Flow.generate.video: Chi tiết các trường options & khả năng Extend
+
+Chữ ký TypeScript nguyên văn:
+
+interface VideoGenerateOptions {
+  prompt: string;
+  firstFrameImageMediaId?: string;
+  lastFrameImageMediaId?: string;
+  referenceImageMediaIds?: string[];
+  sourceVideoMediaId?: string;
+  sourceVideoMode?: 'edit';
+  audioReferenceMediaIds?: string[];
+  aspectRatio?: '16:9' | '9:16';
+  modelDisplayName: string;
+  durationSeconds?: number;
+  resolution?: '360p' | '720p';
+}
+
+Có trường nào để EXTEND một video có sẵn không?
+KHÔNG CÓ. SDK không hỗ trợ extend video (tính năng Extend chỉ có sẵn trên giao diện web chính của Google Flow khi người dùng bấm trực tiếp vào video).
+sourceVideoMode chỉ nhận duy nhất 1 giá trị là 'edit' (dùng cho Video-to-Video style transfer / editing: biến đổi video nguồn theo prompt). Không có giá trị 'extend'.
+Có các trường numberOfVideos, seed, negativePrompt, generateAudio không?
+KHÔNG CÓ. Cả 4 trường này đều không tồn tại trong interface VideoGenerateOptions của SDK.
+audioReferenceMediaIds lấy mediaId giọng nói từ đâu?
+Lấy từ Flow.media.select({ filter: 'audio' }) hoặc Flow.media.selectMultiple({ filter: 'audio' }) khi người dùng chọn file âm thanh đã tải lên gallery của họ. (Lưu ý: SDK quy định khi dùng audioReferenceMediaIds thì bắt buộc phải kèm referenceImageMediaIds hoặc sourceVideoMediaId, không được truyền âm thanh đơn lẻ).
+2) Có được truyền referenceImageMediaIds CÙNG LÚC với firstFrameImageMediaId / lastFrameImageMediaId không?
+KHÔNG ĐƯỢC PHÉP TRUYỀN CÙNG LÚC.
+Quy tắc ràng buộc cốt lõi của SDK: firstFrameImageMediaId và referenceImageMediaIds loại trừ lẫn nhau (mutually exclusive).
+Nếu truyền cả hai cùng lúc, SDK sẽ báo lỗi validation ngay lập tức.
+Vì lastFrameImageMediaId bắt buộc phải đi kèm với firstFrameImageMediaId, nên không có bất kỳ model nào (dù là Omni 1.1 Flash hay các bản Veo 3.1) cho phép kết hợp referenceImageMediaIds cùng lúc với keyframe đầu/cuối. Bạn phải chọn 1 trong 2: hoặc chế độ Keyframe (I2V / Interpolation) hoặc chế độ Tham chiếu phong cách (R2V).
+3) Flow.generate.image: Giới hạn reference & Chế độ chỉnh sửa ảnh
+
+Chữ ký TypeScript nguyên văn:
+
+interface ImageGenerateOptions {
+  prompt: string;
+  referenceImageMediaIds?: string[];
+  aspectRatio?: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
+  modelDisplayName: string;
+}
+
+referenceImageMediaIds tối đa bao nhiêu ảnh?
+Đối với các model hiện hành (🍌 Nano Banana Pro, 🍌 Nano Banana 2.1, 🍌 Nano Banana 2 Lite):
+Chế độ R2I (Text Prompt + References): Tối đa 10 image references.
+Chế độ I2I (1 Base Image + References): Tối đa 1 Base Image + 9 image references (tổng cộng 10 ảnh).
+Có chế độ "chỉnh sửa ảnh" (truyền 1 ảnh gốc + prompt mô tả thay đổi) không?
+CÓ. Model tự động nhận diện chế độ Image-to-Image / Style editing khi bạn truyền mediaId của ảnh gốc vào mảng referenceImageMediaIds: [gocMediaId] kèm prompt mô tả thay đổi (ví dụ: "Transform into anime style" hoặc "Change outfit to red jacket"). Không có trường riêng tên là baseImageMediaId trong options; ảnh đưa vào referenceImageMediaIds sẽ đóng vai trò làm gốc để biến đổi.
+4) Flow.upload: Chữ ký, giới hạn & hành vi
+
+Chữ ký TypeScript nguyên văn:
+
+Flow.upload(options: {
+  base64: string;
+  mimeType: 'image/png' | 'image/jpeg' | 'video/mp4';
+  name?: string;
+}): Promise<{ mediaId: string }>
+
+Giới hạn dung lượng: SDK không nêu con số MB cố định trong tài liệu (không chắc giới hạn byte cụ thể ở tầng host, phụ thuộc bộ nhớ trình duyệt xử lý chuỗi base64), nhưng chỉ hỗ trợ 3 định dạng: image/png, image/jpeg, video/mp4 (không hỗ trợ audio).
+Có tốn credit không?
+KHÔNG. Flow.upload chỉ là thao tác đẩy dữ liệu byte từ client lên Media Gallery để lấy mediaId, hoàn toàn miễn phí (0 credit).
+Ảnh upload có hiện trong thư viện dự án không?
+CÓ. Ảnh/video sau khi upload sẽ được lưu vào Media Gallery của dự án và trả về mediaId để dùng cho các bước xử lý/sinh tiếp theo.
+5) Flow.generate.text: Giới hạn ảnh, kích thước prompt & credit
+
+Chữ ký TypeScript nguyên văn:
+
+Flow.generate.text(
+  prompt: string,
+  options?: {
+    systemInstruction?: string;
+    thinkingLevel?: 'high' | 'medium' | 'low';
+    images?: Array<{ base64: string; mimeType?: string }>;
+    videos?: Array<{ base64: string; mimeType?: string; fps?: number }>;
+    audios?: Array<{ base64: string; mimeType?: string }>;
+  }
+): Promise<{ text: string }>
+
+Tối đa bao nhiêu ảnh trong options.images một lần gọi?
+Trong tài liệu SDK không công bố con số giới hạn cứng (ghi nhận: không chắc số lượng tối đa cụ thể, hoạt động theo context window của Gemini multimodal, thực tế gửi 1–10 ảnh đều hoạt động ổn định).
+Giới hạn kích thước prompt:
+Không chắc giới hạn ký tự cụ thể; kế thừa từ context window của Gemini (hàng chục nghìn tokens).
+Có tốn credit không?
+KHÔNG. Flow.generate.text hiện tại không tính credit (0 credit) trong Flow Tool runtime.
+6) Các API quản lý Media Gallery & Scenebuilder
+Đặt tên / đổi tên media đã tạo:
+Chỉ có thể đặt tên lúc lưu hoặc upload thông qua trường name trong Flow.save({ name: '...' }) hoặc Flow.upload({ name: '...' }).
+KHÔNG CÓ API đổi tên (rename) media đã tồn tại.
+Thêm clip vào Scenebuilder của Flow:
+KHÔNG CÓ. Tool chạy trong sandbox cô lập hoàn toàn, không có method SDK nào để tương tác hay chèn clip vào Scenebuilder của giao diện Flow.
+Đọc danh sách media trong dự án (không qua hộp chọn):
+KHÔNG CÓ. Bắt buộc phải thông qua hộp thoại chọn của người dùng bằng Flow.media.select() hoặc Flow.media.selectMultiple(). Tool không thể tự ý quét hay đọc danh sách media trong thư viện.
+Xoá media:
+KHÔNG CÓ. SDK không cung cấp bất kỳ API nào để xoá media khỏi thư viện dự án.
+7) Flow.media.select / selectMultiple: Giá trị trả về
+
+Chữ ký TypeScript nguyên văn:
+
+interface MediaItem {
+  mediaId: string;
+  base64: string;
+  mimeType: string;
+  type: 'image' | 'video' | 'audio';
+  name: string;
+}
+
+// Chữ ký hàm:
+Flow.media.select(options?: { id?: string; filter?: 'image' | 'video' | 'audio' | 'all' }): Promise<MediaItem>;
+Flow.media.selectMultiple(options?: { maxCount?: number; filter?: 'image' | 'video' | 'audio' | 'all' }): Promise<MediaItem[]>;
+
+Các trường trả về: Gồm 5 trường: mediaId, base64, mimeType, type, và name.
+Ảnh trả về có kèm mediaId để dùng lại làm firstFrame / reference không?
+CÓ. Trường mediaId được trả về đầy đủ và có thể truyền trực tiếp vào firstFrameImageMediaId, lastFrameImageMediaId hoặc referenceImageMediaIds.
+8) Sự kiện / Callback lưu dữ liệu khi đóng tool hoặc tải lại trang
+KHÔNG CÓ.
+Flow SDK không cung cấp bất kỳ lifecycle event hay hook nào cho việc đóng tool.
+Vì Tool chạy trong iframe sandboxed với origin đặc biệt (opaque origin), localStorage / sessionStorage không bền vững giữa các phiên làm việc (bị xóa sạch khi reload/đóng).
+Trình duyệt tiêu chuẩn có sự kiện window.addEventListener('beforeunload', ...), tuy nhiên bên trong sandboxed iframe của host, các tác vụ bất đồng bộ phức tạp (như gọi Flow.download() hay gửi dữ liệu ra ngoài) khi người dùng đóng tab không được đảm bảo chạy thành công.
+Cách làm chuẩn trong Flow Tool: Cung cấp nút cho người dùng chủ động xuất file session JSON thông qua Flow.download() (như kiến trúc SessionCard hiện tại trong app).
+thumb_up
+thumb_down
+content_copy
+flag

@@ -1,0 +1,20 @@
+NÂNG CẤP v2 — ĐỢT 4B: CHẾ ĐỘ KỂ CHUYỆN (PHÁT MINH KỲ LẠ / LỊCH SỬ) + LỜI DẪN. Người dùng sẽ làm series hoạt hình 2D kể về các phát minh độc lạ từ xưa đến nay. Sửa services/library.ts, services/shotengine.ts, services/scriptWriter.ts, components/ScriptEngine.tsx, ShotInspector, types.ts. Giữ nguyên mọi tính năng khác. Không dùng window.confirm/alert/prompt.
+
+A. LỜI DẪN (voice-over) cho từng shot: thêm Shot.narration (string, theo ngôn ngữ người dùng chọn). Trong ShotInspector nhóm "Âm thanh" thêm ô "Lời dẫn (Narration)" kèm bộ đếm từ và cảnh báo vàng khi > 22 từ với shot 8s (≈ 2,7 từ/giây; 4s: 11 từ, 6s: 16 từ, 10s: 27 từ — tính theo duration của dự án). Trình biên dịch video: nếu có narration thì thêm câu 'A warm narrator voice-over (off-screen) says: "{narration}".' trước SFX; nếu cùng lúc có dialogue thì giữ cả hai, narration trước. Lời dẫn KHÔNG đưa vào prompt keyframe.
+
+B. 3 LOOK MỚI (nhóm 2D) hợp chủ đề phát minh/lịch sử:
+- patent_blueprint "Bản vẽ sáng chế cổ": image "vintage patent drawing style animation, precise ink line art on aged cream paper, numbered labels without readable text, subtle sepia wash, technical cutaway details"; video "animated vintage patent drawing, ink line art on aged paper, mechanical parts moving precisely".
+- victorian_engraving "Tranh khắc thời Victoria": "Victorian engraving illustration style, fine crosshatched ink lines, muted sepia and cream palette, 19th-century newspaper print texture".
+- edu_1950s "Hoạt hình giáo dục thập niên 50": "1950s educational cartoon style, cheerful rounded characters, flat mid-century colors, simple painted backgrounds, slight film grain".
+(guard = guard 2D chung.)
+
+C. THỂ LOẠI "Kể chuyện phát minh / lịch sử" trong AI viết kịch bản:
+- Thêm vào dropdown Thể loại: "Kể chuyện phát minh kỳ lạ", "Lịch sử thú vị". Khi chọn, hiện thêm các ô: "Phát minh / chủ đề" (VD: "Máy bay bằng xe đạp của anh em nhà X", hoặc "5 phát minh kỳ lạ nhất thế kỷ 19"), "Số phát minh trong tập" (1 = kể sâu một phát minh, 3–5 = dạng top list), "Nhân vật dẫn chuyện" (chọn từ Vault hoặc "AI đề xuất người dẫn chuyện" — một nhân vật linh vật cố định xuất hiện xuyên suốt series).
+- Cấu trúc tự gán: Long → "Câu móc gây tò mò – bối cảnh thời đại – nhà phát minh & ý tưởng điên rồ – thử nghiệm thất bại hài hước – bước ngoặt thành công – ảnh hưởng đến ngày nay – câu chốt bất ngờ"; Short → "Câu hỏi móc 3 giây – phát minh kỳ lạ xuất hiện – nó hoạt động thế nào – sự thật bất ngờ – câu chốt".
+- Mỗi shot do AI viết có thêm narration (lời dẫn đúng ngôn ngữ đã chọn, vừa độ dài shot), eraLabel (VD "London, 1890" — chỉ để hiển thị và cho file dựng hậu kỳ, KHÔNG đưa vào prompt ảnh/video vì prompt cấm chữ), và factNote (1 câu ghi chú sự thật lịch sử để người dùng tự kiểm chứng). Dialogue thường để trống trong thể loại này (lời dẫn đảm nhiệm).
+- systemInstruction yêu cầu: phát minh và nhân vật lịch sử phải là có thật; nếu không chắc chi tiết thì ghi "(cần kiểm chứng)" trong factNote thay vì bịa; đồ vật/máy móc mô tả hình dạng cụ thể bằng tiếng Anh trong action và environment để model vẽ đúng thời đại; tôn trọng người thật (không bôi nhọ, không hài hước xúc phạm).
+- Danh sách shot ở bước Kịch bản hiển thị thêm eraLabel (chip nhỏ) và narration (dòng chữ nghiêng) dưới mỗi shot; factNote hiện trong ShotInspector với nhãn "Ghi chú sự thật — nên kiểm chứng".
+
+D. Đạo diễn AI và AI hoàn thiện: hiểu thể loại này (ưu tiên insert/close-up cho máy móc, push_in khi tiết lộ, pan_slow cho bản vẽ, impact_shake/comedy khi thử nghiệm thất bại), và AI hoàn thiện có thể sinh narration cho shot đang trống nếu người dùng tick "Viết lời dẫn".
+
+KIỂM TRA: chọn thể loại "Kể chuyện phát minh kỳ lạ", chủ đề "Chiếc ô tô chạy bằng hơi nước đầu tiên", Short 6 shot, ngôn ngữ Tiếng Việt → mỗi shot có narration ≤ giới hạn từ, eraLabel, factNote; prompt video có câu narrator voice-over; prompt keyframe không chứa narration hay eraLabel.

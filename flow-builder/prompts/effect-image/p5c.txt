@@ -1,0 +1,13 @@
+EFFECT-IMAGE — ĐỢT 5C: BẢNG TỔNG KẾT, NHẮC NHỞ, ƯỚC TÍNH ĐÚNG. CHỈ sửa components/AutoPilotPanel.tsx, components/Step1PromptInput.tsx, hàm estimateRun và getLiveRunEstimate trong services/autoPilot.ts, handleDownloadAllRenderedClips trong App.tsx. KHÔNG viết lại file; không dùng window.confirm/alert/prompt; trong văn bản JSX không viết ký tự ">" hoặc "<" trần.
+
+(1) AutoPilotPanel đang nhận onRetryErrors và onDownloadAllAgain nhưng không có nút nào dùng. Khi lượt chạy kết thúc (xong, dừng tay, hoặc dừng vì hạn mức) hiện thẻ tổng kết: "Xong N/M • lỗi E • bỏ qua S từ lượt trước • tổng thời gian", dòng lý do nếu dừng ("Bạn đã dừng" / "Hết hạn mức: còn K prompt chưa chạy, dùng 'Chạy tiếp từ manifest' sau"), các nút: "Chạy lại mục lỗi" (chỉ khi E khác 0, gọi onRetryErrors), "Mở bước 4", "Mở bước 3 để chỉnh". Bỏ nút tải lại hàng loạt vì clip đã giải phóng bộ nhớ sau khi tải; ở bước 4 clip đã giải phóng hiện "Đã tải • đã giải phóng".
+
+(2) NHẮC TRƯỚC KHI CHẠY: trong khối tự động ở bước 1 và trên bảng tiến trình hiện dòng nhỏ: "Giữ tab Flow mở. Tắt chế độ ngủ và khoá màn hình của máy. Cần trống khoảng X GB ổ đĩa. Lần đầu Chrome có thể hỏi cho phép tải nhiều tệp, chọn Cho phép." X = N × 9.5 MB với 1080p, N × 4.5 MB với 720p, N × 2 MB với chế độ chỉ sinh ảnh; làm tròn 1 chữ số.
+
+(3) Kích thước lô mặc định đổi thành 10 (nhãn "10 mục / lô (Mặc định)"; 25 và 50 giữ nguyên, bỏ chữ Mặc định ở 25).
+
+(4) estimateRun đang sai vì soi ảnh chạy NGAY TRONG luồng sinh ảnh, không phải khâu song song riêng. Sửa: thời gian mỗi lượt của 1 luồng sinh ảnh = (28 + 9) × 1.05 giây; nhịp khâu sinh ảnh = thời gian đó / số luồng; bỏ khâu 'Soi ảnh (QC)' khỏi danh sách tìm khâu chậm nhất (khi tắt AI soi ảnh thì lượt = 28s). Nhịp khâu tách lớp = 25s × tỷ lệ ảnh bật parallax, giữ các khâu khác như cũ. Hiển thị tách lớp và sinh ảnh dùng chung các con số này trong bảng chi tiết.
+
+(5) getLiveRunEstimate: khi đã có ít nhất 5 mục hoàn tất (đã tải), thời gian còn lại = số mục còn lại × khoảng cách trung bình giữa 10 lần hoàn tất gần nhất (đo bằng thời điểm tải xong). Trước mốc đó dùng estimateRun với số mặc định. Lưu thêm mảng thời điểm hoàn tất; không cộng trùng thời gian soi ảnh.
+
+KIỂM TRA: với 4 prompt: chế độ 2 hiện khoảng 2 phút; với 300 prompt, 2 luồng: chế độ 2 hiện khoảng 1 giờ 40 phút; lượt chạy kết thúc có thẻ tổng kết và nút "Chạy lại mục lỗi" khi có lỗi.

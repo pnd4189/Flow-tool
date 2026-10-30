@@ -1,0 +1,13 @@
+EFFECT-IMAGE — ĐỢT 6B: HOÀN THIỆN CHẾ ĐỘ TỰ ĐỘNG. CHỈ sửa services/autoPilot.ts và phần modal "Tuỳ chỉnh" trong components/Step1PromptInput.tsx; KHÔNG viết lại file, không đổi giao diện khác. Trong văn bản JSX không viết ">" hoặc "<" trần.
+
+(1) LỖI DỪNG (đã chạy thật): bấm Dừng khi còn 1 clip đang dựng → clip đó tải xong SAU khi manifest lô dở đã ghi, nên không có trong manifest và bị chạy lại khi chạy tiếp. Sửa stop(): sau khi đặt isStopped, chờ tới khi không còn clip đang dựng (isRenderWorkerRunning = false) rồi mới await downloadQueue.waitIdle(), rồi flushPartialBatch(). Thêm chốt an toàn: trong checkBatchCompletion, nếu isStopped thì flushPartialBatch() ngay sau khi thêm mục.
+
+(2) THỜI LƯỢNG: modal "Tuỳ chỉnh" thêm lựa chọn Thời lượng: "Theo AI" (mặc định) hoặc số giây 3–10 (dùng fixedDurationSec sẵn có; thêm durationMode 'ai'|'fixed' nếu chưa có). Khi cố định, sau khi AI chọn xong (và cả khi AI lỗi) đặt effectConfig.durationSec = số đã chọn ở cả 3 chế độ video.
+
+(3) TẢI KÈM ẢNH GỐC: modal thêm công tắc "Tải kèm ảnh gốc" (downloadOriginalImages, mặc định tắt, ẩn ở chế độ Chỉ sinh ảnh). Khi bật: ở các chế độ video, trước khi giải phóng bộ nhớ, đưa ảnh đang được chọn vào hàng đợi tải với cùng tên file clip nhưng đuôi theo mime thật (.png/.jpg), và ghi stillFile vào manifest.
+
+(4) GHÉP THÀNH 1 VIDEO: modal thêm công tắc "Ghép thành 1 video" (mergeIntoOneVideo, mặc định tắt, ẩn ở chế độ Chỉ sinh ảnh), chỉ dùng được khi số prompt cần chạy từ 2 đến 30; trên 30 thì khoá công tắc và ghi "Trên 30 clip file ghép quá nặng cho trình duyệt, hãy ghép bằng phần mềm dựng". Khi bật: chưa giải phóng ảnh và lớp cho tới cuối lượt (clip vẫn giải phóng sau khi tải); sau khi mọi mục xong, gọi renderMergedVideo với các mục thành công theo STT, tải "{tênDựÁn}_ghep.mp4", ghi vào manifest tổng, rồi mới giải phóng. Lỗi ghép chỉ báo toast, không làm hỏng kết quả đã có. Khâu này cũng có withTimeout (120s + 20s mỗi clip) và AbortController.
+
+(5) Dòng tóm tắt cạnh nút Tuỳ chỉnh hiện thêm thời lượng (khi cố định), "+ ảnh gốc", "+ ghép video" khi bật.
+
+KIỂM TRA: 3 prompt, chế độ 3, thời lượng 4 giây, bật ảnh gốc và ghép → 3 clip 4 giây + 3 ảnh + 1 video ghép 12 giây + manifest có stillFile; bấm Dừng khi đang dựng → mọi clip đã tải đều có trong manifest.

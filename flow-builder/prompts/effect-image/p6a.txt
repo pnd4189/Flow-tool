@@ -1,0 +1,14 @@
+EFFECT-IMAGE — ĐỢT 6A: KHÔI PHỤC BƯỚC 3. components/Step3Effects.tsx bị mất rất nhiều tính năng khi thêm ảo hoá danh sách (từ 1382 dòng còn 594 dòng). CHỈ sửa file này (và thêm 1 hàm dùng chung nếu cần ở mục 8). GIỮ NGUYÊN VirtualList, các hàm xử lý đang có, services/, các bước khác. Không dùng window.confirm/alert/prompt; trong văn bản JSX không viết ">" hoặc "<" trần. Mọi chỉnh tay đặt source = 'user'.
+
+Khôi phục đầy đủ các phần sau trong khung bên phải và thanh trên cùng:
+1. Thanh trên: nút "Tạo lớp parallax cho các ảnh cần (n)" (tuần tự các ảnh đã bật parallax mà chưa có lớp, tiến trình "Đang tách lớp 2/5", nút Huỷ) cạnh nút "AI chọn hiệu ứng cho tất cả"; khi đang chọn hiệu ứng hiện "AI đang chọn hiệu ứng 3/12".
+2. Đầu khung phải: "#STT Tiêu đề", dòng "Tỷ lệ • Nguồn: Mặc định/AI chọn/AI lỗi/Chỉnh tay", nút "AI chọn lại" (dùng handleAiDirectSingle, khoá khi đang chạy) và "Đổi seed" (seed mới, ngẫu nhiên lại hạt).
+3. Dưới PreviewPlayer: thẻ "Lý do AI chọn hiệu ứng" hiện currentConfig.aiReason khi có.
+4. Thẻ Parallax đầy đủ: công tắc; trạng thái lớp 4 kiểu: Chưa tạo lớp (nút "Tạo lớp") / Đang tạo lớp... / Sẵn sàng + "Diện tích chủ thể n%" + 2 ô thu nhỏ (lớp nền; lớp chủ thể trên nền caro; dùng bgBlobUrl và subjectCutoutBlobUrl) + nút "Tạo lại lớp" / Đã tắt + lý do disabledReason + nút "Thử tạo lại"; chọn hướng (Phóng vào, Trái, Phải, Lên, Xuống); thanh độ sâu 0–1; công tắc "Thở nhẹ" (subjectBreath) và "Lơ lửng" (subjectFloat).
+5. Máy quay: dưới dropdown có mô tả kiểu đang chọn, thanh cường độ 0–1 (camera.intensity), lựa chọn easing "Mượt" / "Đều"; khi là push_to_focus có gợi ý "Bấm lên khung xem trước để đặt điểm nhấn".
+6. Hiệu ứng phủ: dòng "Đã chọn n/3"; bật hiệu ứng thứ 4 thì toast cảnh báo và không thêm; mỗi hiệu ứng đang bật có thanh cường độ 0–1 ngay trong ô, kèm mô tả ngắn.
+7. Thẻ cuối: thanh Thời lượng 3–10 giây (durationSec), công tắc Fade (fadeInOut).
+8. Ảnh đã giải phóng bộ nhớ (item.isMemoryReleased hoặc blobUrl rỗng): không đưa blobUrl rỗng vào PreviewPlayer; hiện thumbnail, dòng "Ảnh đã tải xong và được giải phóng bộ nhớ" và nút "Nạp lại ảnh" dùng lại đúng logic Flow.media.select đang có trong components/AutoPilotPanel.tsx (tách thành 1 hàm dùng chung).
+9. Danh sách trái: dòng trong EffectRowMemo là role="button" tabIndex={0}, Enter/Space để chọn; phím mũi tên lên/xuống chuyển mục và cuộn tới mục đó; hiện badge nguồn (Mặc định / AI chọn / AI lỗi / Chỉnh tay).
+
+KIỂM TRA: chọn 1 ảnh ở bước 3 thấy đủ cả 9 mục; đổi cường độ máy quay, thời lượng, cường độ hiệu ứng thì khung xem trước đổi theo và badge thành "Chỉnh tay".

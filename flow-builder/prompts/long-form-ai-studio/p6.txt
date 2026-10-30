@@ -1,0 +1,17 @@
+NÂNG CẤP v2 — ĐỢT 6: XUẤT CHO HẬU KỲ + LƯU PHIÊN v2. Sửa bước Xuất (Export), services/downloadQueue.ts, services/sessionService.ts; tạo services/exportKit.ts. Giữ nguyên mọi tính năng khác. Không dùng window.confirm/alert/prompt. Flow.download chỉ nhận mimeType trong allowlist và đuôi file phải khớp: video/mp4→.mp4, image/jpeg→.jpg, application/json→.json, text/plain→.txt, text/markdown→.md.
+
+A. BƯỚC XUẤT gồm 3 khối:
+1) "Clip theo thứ tự": danh sách shot với take active (thumbnail, thời lượng, QC, cờ lệch mạch), cảnh báo nếu còn shot thiếu video / lệch mạch / QC đỏ (không chặn). Nút "Tải tất cả clip" (tuần tự qua hàng đợi chung, nghỉ 1500ms, thử lại 2 lần), "Tải đã chọn", tuỳ chọn "Kèm keyframe (.jpg)" (lấy ảnh full qua Flow.media.select không được vì cần người chọn — nên chỉ tải thumbnail keyframe đang có, ghi rõ "ảnh thu nhỏ"). Tên file: `${projectSlug}_${NNN}_${sceneSlug}_${shotSlug}_t${takeIndex}.mp4` với NNN = số shot 3 chữ số.
+2) "Gói hậu kỳ" (nút "Tải gói hậu kỳ" tải lần lượt 4 file):
+   - `${projectSlug}_edit_manifest.json`: { version: 1, title, mode, aspectRatio, look (id + label), createdAt, totalDurationSeconds, scenes: [{ id, title, eraLabel?, environment }], shots: [{ order, fileName (đúng tên file clip ở trên), durationSeconds, sceneTitle, transitionIn, narration, dialogue, eraLabel, factNote, ambient, sfx, effects (id), cameraMovement (id), qc: { score, verdict } , takeIndex, mediaId }] }.
+   - `${projectSlug}_concat_list.txt`: mỗi dòng `file '<fileName>'` theo thứ tự (định dạng ffmpeg concat).
+   - `${projectSlug}_narration.txt`: lời dẫn theo thứ tự kèm mốc thời gian cộng dồn dạng `[00:08.0 – 00:16.0] #2 Paris, 1769 — <narration>` (bỏ qua shot không có lời dẫn).
+   - `${projectSlug}_storyboard.md`: bảng markdown | # | Scene | Hành động (VI) | Máy quay | Lời dẫn | Ghi chú sự thật | để đọc/duyệt.
+   Ghi chú dưới nút: "Gửi thư mục chứa clip + gói hậu kỳ cho trợ lý dựng phim để ghép, thêm chuyển cảnh, tiêu đề, nhạc và hiệu ứng tự động."
+3) "Ghép nhanh trong Flow (Scenebuilder)": hướng dẫn 4 bước ngắn: mở thư viện dự án → di chuột lên clip → More → Add to Scene theo đúng thứ tự shot (hiện danh sách thứ tự + mediaId rút gọn để dò) → kéo cắt đầu/đuôi → Download scene. Ghi chú: "Tool không thể tự thêm clip vào Scenebuilder (SDK không hỗ trợ)."
+
+B. LƯU PHIÊN v2 (version: 2): lưu thêm look/customStyle, scenes (environmentVi, locationRef mediaId + thumb, weather), shots đầy đủ trường mới (action, subject, characterNames, narration, eraLabel, factNote, effects, transitionIn, modelOverride..., lock, takes KHÔNG kèm blobUrl nhưng kèm mediaId, qc, promptUsed, firstFrameMediaId, lastFrameMediaId), characters (DNA 8 trường + mediaId + thumb), projectTitle, runTag. Mở phiên: chấp nhận version 1 (tự chuyển: shot.video → takes[0], lens cũ → giữ dạng văn bản tự do, look không tồn tại → anime_cel, transitionIn mặc định theo scene) và version 2. Take khôi phục không có blob: hiện "Video ở thư viện Flow" + nút "Nạp lại từ thư viện" (Flow.media.select({ filter: 'video' }) → người dùng chọn đúng clip → tạo blob từ base64 trả về để tải/QC lại).
+
+C. Nhắc lưu: sau mỗi 3 video render xong hoặc 10 keyframe sinh xong mà chưa lưu phiên, hiện toast "Nên Lưu phiên (dữ liệu mất khi tải lại trang)" kèm nút Lưu ngay; header hiện chấm vàng trên nút Lưu khi có thay đổi chưa lưu.
+
+KIỂM TRA: gói hậu kỳ tải đủ 4 file, tên file clip trong manifest và concat_list khớp tên file clip đã tải; lưu phiên v2 rồi mở lại khôi phục takes/lock/QC (không blob) và hiện nút "Nạp lại từ thư viện".

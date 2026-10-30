@@ -1,0 +1,11 @@
+EFFECT-IMAGE — SỬA LỖI ĐỢT 2 (đã chạy thật). Giữ nguyên mọi thứ khác; không dùng window.confirm/alert/prompt.
+
+(1) LỖI CHÍNH — AI chọn hiệu ứng không bao giờ chạy được: trong components/Step3Effects.tsx (handleAiDirectAll và handleAiDirectSingle) đang gọi directEffectsForImage(variant.blobUrl, 'image/jpeg', …) — truyền URL blob vào chỗ cần base64, nên createResizedThumbnail tạo "data:image/jpeg;base64,blob:https://…", ảnh hỏng, Flow.generate.text lỗi và tool lặng lẽ dùng cấu hình mặc định (cả 4 ảnh đều zoom_in + dust_motes, lý do trống). Sửa: thêm trong services/genQueue.ts hàm thumbnailFromUrl(url, maxDimension) nạp ảnh từ blob/object URL (new Image(), img.src = url, không đặt crossOrigin cho blob:), vẽ canvas, trả { base64, mimeType: 'image/jpeg', dataUrl }; ảnh không nạp được thì reject với lỗi rõ ràng. directEffectsForImage nhận imageUrl (không nhận base64 nữa), gọi thumbnailFromUrl(imageUrl, 768) BÊN TRONG khối try.
+
+(2) KHÔNG ĐƯỢC GIẢ VỜ THÀNH CÔNG: directEffectsForImage trả { decision, ok: boolean, error?: string }. Khi gọi AI lỗi hoặc JSON hỏng: dùng cấu hình mặc định nhưng đặt source 'default' (không phải 'ai'), aiReason = "AI lỗi: <message ngắn> — dùng mặc định", badge vàng "AI lỗi" trong danh sách. Cuối lượt "AI chọn hiệu ứng cho tất cả" báo toast "AI chọn xong X/N ảnh • lỗi E" (toast đỏ nếu tất cả đều lỗi). "AI chọn lại" từng ảnh: lỗi thì toast đỏ kèm message.
+
+(3) diversifyCameraMoves chỉ được đổi ảnh có source 'ai' — không bao giờ đổi ảnh source 'user' (chỉnh tay) hay ảnh AI lỗi.
+
+(4) BƯỚC 2 — HIỆN RÕ VIỆC THỬ LẠI: khi đang chờ thử lại sau lỗi tạm thời, mục trong danh sách hiện trạng thái vàng "Chờ thử lại Ns (lần n/3)" thay cho "Đang sinh..."; mỗi mục lưu lịch sử lỗi attempts: [{ at, message }] và khung chi tiết hiện "Số lần thử: n" + danh sách lỗi đã gặp (kể cả khi lần sau thành công). Nếu bấm Dừng khi mục đang chờ thử lại thì mục đó trở về trạng thái "Chờ" để Tiếp tục được, không kẹt "Đang sinh...".
+
+KIỂM TRA: bấm "AI chọn hiệu ứng cho tất cả" với 4 ảnh (tiệm bánh lúc bình minh, hải đăng trong bão, rừng tre sương sớm, xưởng steampunk) → các ảnh có hiệu ứng khác nhau phù hợp nội dung (bão có rain/fog, rừng có light_rays/fog…) và lý do tiếng Việt thật; ảnh đã chỉnh tay giữ nguyên.

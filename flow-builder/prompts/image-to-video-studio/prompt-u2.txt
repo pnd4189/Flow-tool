@@ -1,0 +1,15 @@
+Sửa phần lưu trữ của bộ đếm. Đã kiểm tra thực tế: localStorage trong tool KHÔNG giữ được dữ liệu sau khi tải lại trang (origin của iframe đổi ngẫu nhiên mỗi lần tải), nên hạn mức, số đếm và bản nháp đều mất; dòng trạng thái "Đã lưu trên trình duyệt" hiện tại là sai. Chỉ sửa services/usage.ts và App.tsx (và types.ts nếu cần), giữ nguyên mọi tính năng khác. Không dùng window.confirm/alert/prompt.
+
+1. Gỡ hoàn toàn localStorage: bỏ loadUsage/saveUsage kiểu localStorage, bỏ DRAFT_STORAGE_KEY và cơ chế tự lưu nháp, bỏ cờ persisted và dòng "Đã lưu trên trình duyệt". Hàm khởi tạo trả state mặc định (đã rollover theo ngày). State chỉ sống trong bộ nhớ của phiên.
+
+2. Thêm LƯU PHIÊN / MỞ PHIÊN bằng file JSON (đặt hai nút trong thẻ Usage Tracker):
+- "Lưu phiên": tạo JSON { version: 1, savedAt: ISO string, inputText, settings, scenes: [{ title, prompt, negativePrompt, aspectRatio }], usage: toàn bộ UsageState } rồi gọi Flow.download({ base64, mimeType: 'application/json', filename: `batch-session_${YYYYMMDD}_${HHmm}.json` }). base64 phải xử lý đúng Unicode (TextEncoder rồi btoa theo từng đoạn). Báo "Đã lưu phiên" khi xong, hiện lỗi thật (err.message) khi thất bại.
+- "Mở phiên": input type=file accept=".json,application/json" (ẩn, kích hoạt bằng nút), đọc bằng file.text(), kiểm tra version === 1, rồi khôi phục inputText, settings (model không còn trong MODELS thì dùng mặc định), scenes (mọi scene trở về status 'pending', không có ảnh) và usage (rồi rollover theo ngày và chu kỳ). Hiện thông báo "Đã khôi phục N scene và số đếm. Ảnh đã tạo không nằm trong file; ảnh gốc vẫn có trong thư viện Flow." File sai định dạng thì hiện lỗi rõ ràng, không làm hỏng state hiện tại.
+
+3. Thẻ Usage Tracker:
+- Thêm trường calibrated:boolean (mặc định false) vào UsageState; calibrateCredits và việc mở phiên đặt calibrated = true. Khi calibrated = false thì dòng Credit video hiện thêm nhãn cam "(chưa hiệu chỉnh)" kèm gợi ý "Nhập số credit còn lại ở góc trên phải Flow rồi bấm Hiệu chỉnh".
+- Thêm ô "Số ảnh đã tạo hôm nay" kèm nút "Đặt" để đặt tay imageCount (hàm setTodayImages trong usage.ts), vì tool không đọc được số thật từ Flow.
+- Thay dòng trạng thái lưu bằng ghi chú: "Số đếm chỉ lưu trong phiên này (Flow xoá bộ nhớ của tool mỗi lần tải lại). Dùng Lưu phiên / Mở phiên để giữ lại."
+- Khi thay đổi "Credit/tháng" thì cập nhật luôn creditBaseline = giá trị mới nếu creditSpent đang bằng 0 và chưa hiệu chỉnh.
+
+Kiểm tra lại: build không lỗi; bấm "Lưu phiên" tải về một file JSON hợp lệ; "Mở phiên" với file đó khôi phục đúng số đếm.

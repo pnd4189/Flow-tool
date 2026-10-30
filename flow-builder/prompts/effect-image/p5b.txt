@@ -1,0 +1,23 @@
+EFFECT-IMAGE — ĐỢT 5B: CHỐNG TREO VÀ KHÔNG MẤT DỮ LIỆU KHI CHẠY NHIỀU GIỜ. CHỈ sửa services/autoPilot.ts, services/layerService.ts, services/downloadQueue.ts, services/genQueue.ts, services/effectDirector.ts, và chỗ dùng subjectCutoutDataUrl. KHÔNG viết lại file; không dùng window.confirm/alert/prompt.
+
+(1) MỌI LỜI GỌI ĐỀU CÓ HẠN GIỜ — hiện chỉ generateSingleImageWithTimeout có; một lời gọi treo là đứng cả dây chuyền. Thêm withTimeout(promise, ms, label) trong genQueue.ts (ném Error `${label} timeout sau Ns` để isTemporaryError nhận ra): translatePromptToEnglish, inspectImageQc, rewritePromptForSafety, directEffectsForImage 60s; mỗi Flow.generate.image trong layerService 120s; Flow.download và downloadJsonFile 90s; renderClipToMp4 trong autoPilot 180s (dùng AbortController để huỷ thật, mục đó báo lỗi rồi đi tiếp).
+
+(2) THỢ KHÔNG ĐƯỢC CHẾT: trong processEffectQueue và processRenderQueue bọc mỗi mục bằng try/catch (lỗi → mục đó stage 'error', gọi checkAllCompleted, chạy mục sau) và trả cờ isEffectWorkerRunning/isRenderWorkerRunning trong finally. runGenerateSingle và runLayerSingle bọc toàn bộ thân hàm: mọi lỗi chưa bắt → mục 'error' + checkAllCompleted, không để mục kẹt 'generating' làm lượt chạy không bao giờ kết thúc.
+
+(3) TÁCH LỚP: mỗi lần sinh trong generateParallaxLayers thử lại tối đa 2 lần với lỗi tạm thời (chờ 5s, 15s). Không lưu kết quả lỗi vào LAYER_CACHE.
+
+(4) RÒ RỈ BỘ NHỚ: ParallaxLayerData không giữ subjectCutoutDataUrl nữa (giữ Blob + ObjectURL; mọi nơi đang đọc dataURL đổi sang subjectCutoutBlobUrl — rà Step3Effects, motionEngine, exportService). releaseItemMemory gọi invalidateLayerCache(mediaId) để xoá khỏi LAYER_CACHE và đặt progress.blobUrl = undefined.
+
+(5) TỰ PHỤC HỒI KHI CHẠY KHÔNG CÓ NGƯỜI TRÔNG: recordError đang đếm từng lần thử, nên chỉ một đợt nghẽn ngắn cũng làm tạm dừng. Sửa: consecutiveFailedItems chỉ tăng khi 1 mục đã hết lượt thử lại (không tính lỗi an toàn), reset khi 1 mục sinh thành công. Giữ riêng việc đếm lỗi quá tải để giảm luồng như hiện nay.
+- Đổi model dự phòng: đủ 3 mục lỗi liên tiếp → các mục sau dùng getNextFallbackModel (ghi model thật vào manifest, toast). Chỉ khi config.autoFallbackModel bật (mặc định bật).
+- Đủ 5 mục lỗi liên tiếp → gọi flushPartialBatch(), ngừng nhận mục mới, tự nghỉ 3 phút rồi tự chạy lại các mục vừa lỗi (đưa về 'waiting', bỏ qua khâu đã xong); tối đa 5 vòng nghỉ. Hết 5 vòng vẫn lỗi mới tạm dừng hẳn và hiện băng đỏ như hiện nay. Bảng hiện "Tự nghỉ, thử lại sau 2:41 (vòng 2/5)". resume() đặt lại các bộ đếm.
+
+(6) KHÔNG MẤT MANIFEST LÔ DỞ: thêm flushPartialBatch() (ghi manifest_lo cho các mục đã tải, tăng currentBatchIndex; không ghi gì nếu rỗng) và gọi ở mọi đường kết thúc:
+- stop(): ngừng mọi khâu mới nhưng KHÔNG gọi cancelAll — chờ hàng đợi tải hết (thêm downloadQueue.waitIdle()), rồi flushPartialBatch() và gọi onFinished với summary có stoppedByUser: true.
+- Quota exceeded: chỉ ngừng sinh ảnh mới; các mục đã có ảnh vẫn đi tiếp (chọn hiệu ứng, dựng, tải; bỏ tách lớp vì cần sinh ảnh), xong thì flushPartialBatch() và onFinished với summary có stoppedByQuota: true và số prompt chưa chạy. Không để bảng kẹt ở trạng thái đang chạy.
+
+(7) CHẠY TIẾP: currentBatchIndex bắt đầu từ batchIndex lớn nhất trong các manifest đã nạp + 1 (để không trùng tên manifest_lo01). Nếu tất cả mục đã xong từ manifest thì kết thúc ngay, không treo. retryFailedStages: mục đã có ảnh dùng stage riêng 'queued_effect' để pumpGenerators không sinh lại ảnh.
+
+(8) ĐA DẠNG MÁY QUAY: chế độ tự động chưa gọi đa dạng hoá. Sau khi AI chọn xong mỗi ảnh, nếu camera.move trùng cả 2 ảnh ngay trước (theo thứ tự xử lý) và source là 'ai' thì đổi sang kiểu kế tiếp trong vòng: zoom_in → pan_right → push_to_focus → pan_left → zoom_out → orbit_sway → pan_up → zoom_in, giữ nguyên intensity.
+
+KIỂM TRA: giả lập "tạm thời" 5 lần → không tạm dừng, ảnh vẫn ra; bấm Dừng giữa lô → clip đang chờ tải vẫn tải xong và có manifest_lo của lô dở; giả lập "hạn mức" → ảnh đã sinh vẫn thành clip, có manifest, bảng hiện tổng kết.

@@ -1,0 +1,11 @@
+SỬA 4 LỖI NHỎ PHÁT HIỆN KHI CHẠY THỬ ĐẦU-CUỐI. Giữ nguyên mọi thứ khác. Không dùng window.confirm/alert/prompt.
+
+1. Tab "Kịch bản tay": ô nhập đang chứa sẵn kịch bản mẫu (Cugnot) làm GIÁ TRỊ thật, người dùng dễ tách nhầm. Sửa: giá trị mặc định rỗng, kịch bản mẫu chỉ là placeholder; thêm nút nhỏ "Dán ví dụ". Đồng thời tab này phải dùng CHUNG bộ phân tích văn bản của services/scriptImport.ts: dòng tiêu đề cảnh ("CẢNH 1: ...", "Cảnh 2 -", "SCENE 3", "INT."/"EXT.", "#", "##") mở scene mới với environment là phần mô tả sau tiêu đề (hiện đang bị tách thành 1 shot), dòng "TÊN: lời thoại" gán vào dialogue của shot trước.
+
+2. Tên file không thống nhất: clip đang dùng tiền tố "anime_2d_film_stud" còn gói hậu kỳ dùng "anime_2d_film_studio". Dùng MỘT hàm projectSlug (cắt tối đa 24 ký tự, bỏ dấu, chữ thường, [^a-z0-9]→'_') cho mọi tên file (clip, keyframe, manifest, concat_list, narration, storyboard, session). Manifest và concat_list phải luôn khớp tên clip thật.
+
+3. "Tải tất cả clip" sau khi mở phiên: take khôi phục từ file phiên không có blob nên không tải được. Sửa: bỏ qua các take không có blob, hiện toast "N clip cần 'Nạp lại từ thư viện' trước khi tải: #1, #2" và đánh dấu các dòng đó; chỉ tải các clip có blob.
+
+4. AI kiểm tra chất lượng đang cho điểm dồn quanh 70–76 cho mọi clip. Bổ sung thang mốc vào systemInstruction: 95 = hoàn hảo có thể phát sóng; 85 = lỗi rất nhỏ khó nhận ra; 75 = lỗi nhỏ nhìn kỹ mới thấy, chấp nhận được; 60 = lỗi thấy rõ (mặt/tay biến dạng, nhân vật đổi màu áo, trôi sang 3D); 40 = hỏng nặng; dùng cả thang điểm, không mặc định ~70. Ngưỡng badge giữ nguyên.
+
+KIỂM TRA: tách "CẢNH 1: xưởng gỗ\nCô bé kéo cần gạt.\nMAI: Bay lên nào!" ra 1 scene (environment "xưởng gỗ"), 1 shot có dialogue; tên clip và manifest cùng tiền tố.

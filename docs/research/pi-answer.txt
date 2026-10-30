@@ -1,0 +1,19 @@
+## A) Official Google statements
+
+**Flow image generation is not credit-priced.** Flow credits page (support.google.com/flow/answer/16526234, live page, no "last updated" date shown): *"To generate content in Google Flow, you need to use Google Flow credits or AI credits."* Its per-generation cost table covers **only** Veo 3.1, Gemini Omni Flash and 1080p/4K upscaling — **no image model rows**. Also: *"With or without a subscription, you receive 50 Google Flow credits per day."*
+
+**Images in Flow are free.** blog.google, "Nano Banana 2" (26 Feb 2026): *"Flow: Nano Banana 2 is the new default image generation model in Flow, available to all Flow users for zero credits."* Flow models help page (support.google.com/flow/answer/16352836): *"Nano Banana Pro: … It is the default model for Google AI Ultra subscribers."* / *"Nano Banana 2 Lite: … the default model available at no charge."* / *"Nano Banana 2.1: The standard model…"* — **no daily image count anywhere in the Flow Help Center.**
+
+**The "1000 images/day" number is a Gemini app figure, and an old one.** Archived Gemini Apps limits page (support.google.com/gemini/answer/16275805, snapshot 28 Jan 2026), columns Free / Plus / Pro / Ultra:
+- Nano Banana: *"Up to 100 images / day"* (Free); *"Up to 1,000 images / day"* (Pro)
+- Nano Banana Pro: *"3 images / day"* (Free); *"Up to 100 images / day"* (Pro); *"Up to 1000 images / day"* (Ultra)
+
+That table is titled "Gemini Apps" — **not Flow**. By the 7 Jun 2026 snapshot these rows were gone; the live page now gives only multipliers: *"AI Plus 2x … AI Pro 4x … AI Ultra 5x or 20x higher than AI Pro limits"*. gemini.google/subscriptions likewise lists *"10,000 or 25,000 Google Flow Credits"* for Ultra and *"5x / 20x higher usage limits"* — no image counts. Gemini image help (answer/14286560) acknowledges a cap but publishes no number: *"If you reach your daily quota of Nano Banana 2 images, you can't redo any additional images with Nano Banana Pro."*
+
+**Per-model, per-plan image/day numbers (Nano Banana 2, 2 Lite, 2.1; Plus tier in any app): not published.**
+
+## B) Third-party claims
+Community threads (e.g. support.google.com/gemini/thread/414994398 — user-to-user, AI-suggested answers) and SEO blogs assert "Ultra: 1,000 images/day" and attribute it loosely to both Flow and Gemini. Treat as unverified; Google never states this for Flow.
+
+## C) Not found
+Any official daily image quota for Flow; any official per-model image counts post-removal; Flow credit costs for image models.

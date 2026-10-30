@@ -1,0 +1,68 @@
+
+
+Dưới đây là câu trả lời chi tiết và chính xác theo đặc tả của Flow SDK hiện tại:
+
+(1) Danh sách modelDisplayName hợp lệ cho video & cách quản lý độ phân giải
+Chuỗi định danh nguyên văn (exact string):
+
+Hiện tại trong Flow SDK, có đúng 4 model video hợp lệ:
+
+'Omni 1.1 Flash' (Lưu ý: model cũ Omni Flash đã được thay thế thành chuỗi này)
+'Veo 3.1 - Lite'
+'Veo 3.1 - Fast'
+'Veo 3.1 - Quality'
+
+(Tuyệt đối không có các tên như Gemini Omni Flash 1.1 hay Veo 3.1 Lite thiếu dấu gạch ngang).
+
+Về 360p, 720p, Lower Priority:
+Không phải model riêng biệt.
+Độ phân giải được truyền qua tham số: resolution: '360p' | '720p' trong Flow.generate.video({...}).
+Lower Priority: Không tồn tại tham số hay model nào tên "Lower Priority" trong Flow SDK. Trạng thái ưu tiên hàng đợi hoàn toàn do tier tài khoản Flow của người dùng quyết định ở phía host.
+(2) Chi tiết từng model: Thời lượng, Resolution, Aspect Ratio & Input Media
+Tiêu chí	Omni 1.1 Flash	Veo 3.1 - Lite	Veo 3.1 - Fast	Veo 3.1 - Quality
+durationSeconds cho phép	4, 6, 8, 10	4, 6, 8 (Freemium/Pro chỉ có 8s; Ultra có 4, 6, 8s)	4, 6, 8 (Freemium/Pro chỉ có 8s; Ultra có 4, 6, 8s)	4, 6, 8 (Freemium/Pro chỉ có 8s; Ultra có 4, 6, 8s)
+resolution cho phép	'360p', '720p' (mặc định 720p)	Chỉ '720p' (không hỗ trợ chọn 360p)	Chỉ '720p' (không hỗ trợ chọn 360p)	Chỉ '720p' (không hỗ trợ chọn 360p)
+aspectRatio cho phép	'16:9', '9:16'	'16:9', '9:16'	'16:9', '9:16'	'16:9', '9:16'
+firstFrameImageMediaId (I2V)	Có (hỗ trợ)	Có (hỗ trợ)	Có (hỗ trợ)	Có (hỗ trợ)
+lastFrameImageMediaId (Interpolation)	Có (cần kèm firstFrame)	Có (cần kèm firstFrame)	Có (cần kèm firstFrame)	Có (cần kèm firstFrame)
+referenceImageMediaIds (R2V)	Có (tối đa 7 ảnh)	Có (tối đa 3 ảnh, cố định 8s)	Có (tối đa 3 ảnh, cố định 8s)	Không hỗ trợ R2V (chỉ T2V và I2V)
+
+Ràng buộc quan trọng: Trong SDK, firstFrameImageMediaId và referenceImageMediaIds là loại trừ lẫn nhau (mutually exclusive). Không được truyền đồng thời cả hai vào cùng một lệnh gọi.
+
+(3) Kết quả trả về, dung lượng, âm thanh & credit
+Kiểu dữ liệu trả về:
+interface VideoGenerateResult {
+  base64: string;    // Chuỗi base64 raw của video (định dạng MP4)
+  mimeType: string;  // 'video/mp4'
+  mediaId: string;   // ID đã tự động lưu vào Media Gallery của Flow host
+}
+
+Dung lượng điển hình (clip 4–8 giây):
+360p: Khoảng 1.5 MB – 4 MB (tùy chuyển động và bitrate).
+720p: Khoảng 4 MB – 15 MB.
+Có kèm âm thanh không?
+Không chắc (Mặc định các mô hình video sinh clip tĩnh không có track tiếng hoặc track audio rỗng, trừ phi pipeline của host Flow tự sinh sound fx, nhưng SDK không có tham số bật/tắt audio đầu ra).
+Có trường credit tốn / credit còn lại không?
+Hoàn toàn KHÔNG. Object trả về chỉ duy nhất có 3 trường: { base64, mimeType, mediaId }.
+(4) Thời gian chờ điển hình & Message lỗi cụ thể
+Thời gian chờ: Điển hình từ 60 giây đến 180 giây (1 đến 3 phút) tùy độ dài (4s hay 10s), độ phân giải, và độ tải của hệ thống.
+Message lỗi cụ thể khi hết credit hoặc hạn mức ngày:
+Không chắc về chuỗi nguyên văn chính xác 100% của mọi trường hợp, vì message này được trả về từ máy chủ backend của Flow qua ngoại lệ Error.message.
+Thông thường lỗi quota/credit sẽ ném ra ngoại lệ (throw Exception) với nội dung chứa các từ khóa như: Quota exceeded, Insufficient credits, Credit balance is too low, hoặc tiếng Việt tương đương nếu tài khoản đặt ngôn ngữ tiếng Việt. Do đó, mã client chỉ có thể bắt bằng err.message (ví dụ kiểm tra includes('quota') || includes('credit')).
+(5) Có API nào trong SDK đọc số credit còn lại / số ảnh đã tạo không?
+KHÔNG.
+Flow SDK chạy hoàn toàn phía client trong sandboxed iframe. SDK không cung cấp bất kỳ hàm nào để truy vấn thông tin tài khoản người dùng, số credit hiện có, hay lịch sử/số lượng media đã tạo trong ngày.
+(6) Flow.generate.image có trả về thông tin hạn mức hoặc credit không?
+KHÔNG.
+Cấu trúc trả về của Flow.generate.image cũng giống như video:
+interface ImageGenerateResult {
+  base64: string;    // Raw base64 của ảnh
+  mimeType: string;  // e.g. 'image/jpeg' hoặc 'image/png'
+  mediaId: string;   // Media ID được auto-save vào Gallery
+}
+
+Hoàn toàn không có bất kỳ metadata hay trường nào liên quan đến quota, credit hay chi phí thực thi.
+thumb_up
+thumb_down
+content_copy
+flag

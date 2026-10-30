@@ -1,0 +1,9 @@
+SỬA LỖI KẾ THỪA BỐI CẢNH (đã đọc code, xác nhận 2 lỗi). Chỉ sửa services/keyframeService.ts và components/StoryboardGrid.tsx, giữ nguyên mọi thứ khác.
+
+1. Trong handleStartBatchGeneration, biến slots được chốt lúc bấm nút nên prompt và referenceMediaIds tính từ trạng thái CŨ: khi sinh từ đầu, keyframe thứ 2 không tham chiếu keyframe thứ 1 vừa sinh, và cũng không có locationRef vừa tạo trong cùng lượt (vì currentScenes mới không được dùng). Sửa: trước MỖI slot trong vòng lặp, gọi lại buildKeyframeSlots(currentShots, currentScenes, characters, config) và lấy slot theo slotId (không theo index cũ), rồi dùng prompt + referenceMediaIds + hasContinuityRef MỚI của slot đó. Danh sách slot cần sinh xác định bằng slotId lúc bấm.
+
+2. Trong buildKeyframeSlots, keyframe tham chiếu "ngay trước" đang lấy slot có ảnh gần nhất bất kể scene. Sửa: chỉ lấy keyframe ngay trước NẾU nó thuộc CÙNG scene với slot hiện tại (so sceneId của shot sở hữu slot đó); khác scene thì không thêm và hasContinuityRef = false. Áp dụng cho cả 3 nhánh (start, shared, end).
+
+3. Thêm vào mỗi slot trường refSummary (ví dụ "nhân vật ×1 + keyframe trước + bối cảnh") và hiển thị dòng nhỏ này dưới nhãn slot trong grid, để người dùng thấy keyframe được kế thừa từ đâu.
+
+KIỂM TRA: với 3 shot cùng scene, chưa có keyframe nào, bấm "Sinh còn thiếu": keyframe đầu có refSummary gồm bối cảnh; keyframe thứ 2 và 3 có "keyframe trước + bối cảnh".

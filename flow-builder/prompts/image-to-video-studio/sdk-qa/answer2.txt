@@ -1,0 +1,195 @@
+Liệt kê TOÀN BỘ các hàm/thuộc tính public của đối tượng Flow trong flow-sdk (ví dụ Flow.generate.*, Flow.download, Flow.save, ...) kèm chữ ký TypeScript chính xác và giới hạn (dung lượng base64, mimeType, tên file) cho từng hàm. Đặc biệt: (a) Flow.save lưu ảnh vào đâu (thư viện media của project?), nhận tham số gì, có giới hạn dung lượng không, trả về gì; (b) có API nào để lưu trữ bền vững dữ liệu của tool (localStorage/IndexedDB/Flow.storage...) giữa các lần mở tool không; (c) khi Flow.download hoặc Flow.generate.image lỗi thì message/mã lỗi cụ thể là gì (quota, rate limit, mime không hỗ trợ, payload quá lớn)?
+
+Dưới đây là bảng đặc tả chi tiết toàn bộ các API public của đối tượng Flow trong flow-sdk, giải đáp cặn kẽ 3 câu hỏi (a), (b), (c) theo sandbox của Google Flow:
+
+I. DANH SÁCH TOÀN BỘ CÁC HÀM & THUỘC TÍNH PUBLIC CỦA Flow
+1. Flow.save(options: SaveOptions): Promise<{ mediaId: string }>
+Chữ ký TypeScript:
+interface SaveOptions {
+  base64: string;                                     // Raw base64 (không kèm prefix "data:...;base64,")
+  mimeType: 'image/png' | 'image/jpeg' | 'video/mp4'; // BẮT BUỘC một trong 3 định dạng này
+  name?: string;                                      // Tên hiển thị (mặc định: 'Mini-App Output')
+}
+
+Giới hạn & Ràng buộc:
+Dung lượng: Dữ liệu được serialize qua RPC/IPC iframe postMessage sang Flow host. Giới hạn thực tế nằm ở bộ nhớ RAM của tab trình duyệt và IPC message buffer (thường dưới ~50MB – 100MB cho 1 payload base64).
+MimeType: Chỉ chấp nhận image/png, image/jpeg, video/mp4. Không hỗ trợ Audio, GIF, ZIP hay PDF.
+Tên file: Chuỗi string UTF-8, nếu rỗng mặc định là 'Mini-App Output'.
+2. Flow.download(options: DownloadOptions): Promise<{ isSuccess: boolean }>
+Chữ ký TypeScript:
+type FlowDownloadMimeType =
+  | 'image/jpeg' | 'image/jpg' | 'image/png' | 'image/gif' | 'image/webp'
+  | 'image/avif' | 'image/heif' | 'image/heic'
+  | 'video/mp4' | 'video/webm' | 'video/quicktime'
+  | 'audio/mpeg' | 'audio/mp3' | 'audio/wav' | 'audio/x-wav' | 'audio/webm' | 'audio/mp4'
+  | 'text/plain' | 'text/markdown' | 'text/csv'
+  | 'application/json';
+
+interface DownloadOptions {
+  base64: string;                  // Raw base64 hoặc full data: URL
+  mimeType?: FlowDownloadMimeType; // Bắt buộc thuộc allowlist trên
+  filename?: string;               // Tên file kèm đuôi (phải khớp MIME)
+}
+
+Giới hạn & Ràng buộc:
+MimeType: Cực kỳ nghiêm ngặt. KHÔNG hỗ trợ: application/zip, image/svg+xml, application/pdf, binary tùy ý.
+Tên file & Đuôi file: Đuôi file (.png, .jpg, .mp4, .json, ...) bắt buộc phải khớp hoàn toàn với mimeType được khai báo (ví dụ image/jpeg phải đi với .jpg hoặc .jpeg). Nếu đuôi file lệch với MIME, hàm sẽ throw lỗi ngay lập tức.
+Dung lượng: Base64 qua IPC xuống host downloader; nếu truyền file quá lớn (> 50–100MB) có thể làm tràn bộ đệm IPC giữa iframe sandbox và host.
+3. Flow.upload(options: UploadOptions): Promise<{ mediaId: string }>
+Chữ ký TypeScript:
+interface UploadOptions {
+  base64: string;                                     // Raw base64 không kèm tiền tố
+  mimeType: 'image/png' | 'image/jpeg' | 'video/mp4'; 
+  name?: string;
+}
+
+Mục đích: Đưa pixel vừa chỉnh sửa/vẽ trên canvas lên gallery nội bộ để lấy mediaId làm đầu vào cho các pipeline AI (Flow.generate.image hoặc Flow.generate.video).
+4. Flow.media.select(options?: MediaSelectOptions): Promise<MediaItem>
+5. Flow.media.selectMultiple(options?: MediaSelectMultipleOptions): Promise<MediaItem[]>
+Chữ ký TypeScript:
+interface MediaSelectOptions {
+  id?: string;
+  filter?: 'image' | 'video' | 'audio' | 'all'; // Mặc định: 'all'
+}
+
+interface MediaSelectMultipleOptions {
+  maxCount?: number;                            // Mặc định: không giới hạn
+  filter?: 'image' | 'video' | 'audio' | 'all';
+}
+
+interface MediaItem {
+  mediaId: string;
+  base64: string;    // Raw base64 của asset đã chọn
+  mimeType: string;  // Dynamic MIME từ host (ví dụ: 'image/webp', 'image/png', ...)
+  type: 'image' | 'video' | 'audio';
+  name: string;
+}
+
+6. Flow.generate.image(options: ImageGenerateOptions): Promise<ImageGenerateResult>
+Chữ ký TypeScript:
+interface ImageGenerateOptions {
+  prompt: string;
+  modelDisplayName: string; // Tên chuẩn xác (ví dụ: '🍌 Nano Banana Pro', '🍌 Nano Banana 2.1')
+  aspectRatio?: '1:1' | '16:9' | '9:16' | '4:3' | '3:4'; // Mặc định: '16:9'
+  referenceImageMediaIds?: string[]; // Tối đa 10 mediaId tham chiếu
+}
+
+interface ImageGenerateResult {
+  base64: string;    // Raw base64 trả về
+  mimeType: string;  // 'image/jpeg' hoặc 'image/png'
+  mediaId: string;   // ĐÃ TỰ ĐỘNG LƯU VÀO GALLERY
+}
+
+7. Flow.generate.video(options: VideoGenerateOptions): Promise<VideoGenerateResult>
+Chữ ký TypeScript:
+interface VideoGenerateOptions {
+  prompt: string;
+  modelDisplayName: string; // Ví dụ: 'Omni 1.1 Flash', 'Veo 3.1 - Fast'
+  aspectRatio?: '16:9' | '9:16';
+  durationSeconds?: number;
+  resolution?: '360p' | '720p';
+  firstFrameImageMediaId?: string;
+  lastFrameImageMediaId?: string;
+  referenceImageMediaIds?: string[];
+  sourceVideoMediaId?: string;
+  sourceVideoMode?: 'edit';
+  audioReferenceMediaIds?: string[];
+}
+
+interface VideoGenerateResult {
+  base64: string;
+  mimeType: string;  // Thường là 'video/mp4'
+  mediaId: string;   // ĐÃ TỰ ĐỘNG LƯU VÀO GALLERY
+}
+
+8. Flow.generate.text(prompt: string, options?: TextGenerateOptions): Promise<{ text: string }>
+Chữ ký TypeScript:
+interface TextGenerateOptions {
+  systemInstruction?: string;
+  thinkingLevel?: 'high' | 'medium' | 'low';
+  images?: Array<{ base64: string; mimeType?: string }>;
+  videos?: Array<{ base64: string; mimeType?: string; fps?: number }>;
+  audios?: Array<{ base64: string; mimeType?: string }>;
+}
+
+9. Flow.camera.capture(options?: CameraCaptureOptions): Promise<CameraCaptureResult>
+Chữ ký TypeScript:
+interface CameraCaptureOptions {
+  facingMode?: 'user' | 'environment';
+}
+interface CameraCaptureResult {
+  base64: string;
+  mimeType: string;
+  width: number;
+  height: number;
+}
+
+10. Flow.camera.stream(options?: CameraStreamOptions): Promise<CameraStreamResult>
+Chữ ký TypeScript:
+interface CameraStreamOptions {
+  facingMode?: 'user' | 'environment';
+  frameRate?: number;
+  resolution?: 'low' | 'medium' | 'high';
+}
+interface CameraStreamResult {
+  width: number;
+  height: number;
+  onFrame(callback: (frame: { bitmap: ImageBitmap; width: number; height: number }) => void): void;
+  stop(): Promise<void>;
+}
+
+11. Flow.microphone.record(options?: MicrophoneRecordOptions): Promise<MicrophoneRecordResult>
+Chữ ký TypeScript:
+interface MicrophoneRecordOptions {
+  durationMs?: number; // Mặc định 5000ms, tối đa 120000ms
+}
+interface MicrophoneRecordResult {
+  base64: string;
+  mimeType: string;
+  durationMs: number;
+}
+
+II. TRẢ LỜI CỤ THỂ 3 CÂU HỎI
+(a) Flow.save lưu ảnh vào đâu, nhận gì, giới hạn dung lượng, trả về gì?
+Lưu vào đâu? Lưu trực tiếp vào Media Gallery của Project hiện tại trên Flow Host (người dùng sẽ nhìn thấy nó xuất hiện ngay trong tab Asset/Media của project ngoài thanh công cụ Flow).
+Nhận tham số gì? Đối tượng { base64: string, mimeType: 'image/png' | 'image/jpeg' | 'video/mp4', name?: string }.
+Giới hạn dung lượng?
+Không có con số cứng bằng bytes trong SDK specs, nhưng bị giới hạn bởi bộ nhớ buffer truyền chuỗi qua postMessage IPC giữa iframe sandbox và host (thông thường an toàn nhất là dưới 30MB – 50MB).
+Chỉ hỗ trợ PNG, JPEG, MP4.
+Trả về gì? Trả về Promise chứa { mediaId: string }. mediaId này là định danh asset vĩnh viễn trên Flow, có thể dùng tiếp cho referenceImageMediaIds, firstFrameImageMediaId,...
+(b) Có API nào để lưu trữ bền vững (persistent storage) giữa các lần mở tool không?
+KHÔNG.
+Flow SDK hoàn toàn không cung cấp API Flow.storage hay bất kỳ cơ chế database đồng bộ nào.
+Flow Tool chạy trong một iframe sandbox có unique, opaque origin (sandbox="allow-scripts"). Do đó:
+localStorage và sessionStorage bị cô lập hoặc bị trình duyệt xóa sạch mỗi khi tải lại trang / đóng mở lại tool.
+IndexedDB có thể ghi được tạm thời trong phiên nhưng không được đảm bảo giữ lại giữa các session do chính sách sandbox ephemeral origin.
+Cách lưu bền vững duy nhất hiện nay:
+Lưu media vào Media Gallery bằng Flow.save() hoặc nhận kết quả từ Flow.generate.* (lấy mediaId).
+Cho người dùng tải cấu hình/dữ liệu về máy tính bằng Flow.download() dưới dạng file JSON (application/json) hoặc Text (text/plain), và dùng <input type="file"> để import lại khi mở tool.
+(c) Khi Flow.download hoặc Flow.generate.image lỗi thì message / mã lỗi cụ thể là gì?
+
+Flow SDK ném ra các lỗi runtime (Error) với message dạng text:
+
+Lỗi ở Flow.download:
+
+MIME không hỗ trợ: Thường ném lỗi: "Unsupported MIME type: application/zip" (hoặc định dạng không nằm trong danh sách 22 MIME cho phép).
+MIME lệch đuôi file: "Filename extension does not match MIME type" (ví dụ khai báo image/jpeg nhưng đặt tên output.png hoặc file.zip).
+Payload quá lớn: Trình duyệt hoặc host ném lỗi IPC/postMessage: "Failed to execute 'postMessage' on 'Window': Data cannot be cloned / Payload too large" hoặc iframe bị crash/out of memory.
+
+Lỗi ở Flow.generate.image:
+
+Hết Quota / Hạn mức: Thường chứa cụm từ: "Quota exceeded", "Insufficient credits", hoặc "You have exhausted your generation limit".
+Rate Limit / High Traffic / Throttling: "Service is temporarily unavailable due to high demand", "Model is currently overloaded", hoặc "Rate limit exceeded. Please try again later."
+Sai Model Name: "Model not found" hoặc "Invalid modelDisplayName: ...".
+Bộ lọc an toàn (Safety Filter): "Prompt violated safety guidelines" hoặc "Generation blocked due to content policy".
+Lỗi mạng / Host Timeout: "Failed to fetch" hoặc "Generation request timed out".
+thumb_up
+thumb_down
+content_copy
+flag
+Bạn muốn tạo gì?
+
+
+
+
+arrow_forward

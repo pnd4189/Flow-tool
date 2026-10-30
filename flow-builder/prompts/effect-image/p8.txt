@@ -1,0 +1,13 @@
+EFFECT-IMAGE — ĐỢT 8: KHÔI PHỤC BƯỚC 4 THỦ CÔNG. components/Step4Export.tsx bị mất giao diện cài đặt và nhiều nút khi thêm ảo hoá danh sách. CHỈ sửa file này; GIỮ NGUYÊN VirtualList, ExportClipRowMemo, phần đồng bộ kết quả từ chế độ tự động, các hàm đang có. Không dùng window.confirm/alert/prompt; trong văn bản JSX không viết ">" hoặc "<" trần.
+
+1. THANH CÀI ĐẶT trên danh sách (state settings đã có sẵn, chỉ thiếu giao diện): Tên dự án (ô nhập), Độ phân giải 720p/1080p, FPS 24/30, các công tắc: Tải từng clip, Ghép thành 1 video (khoá khi số clip đã chọn trên 30, ghi rõ lý do), Tải kèm ảnh gốc, Tải manifest, Lưu clip vào thư viện Flow. Mặc định như state hiện tại.
+
+2. CÁC NÚT: "Dựng & tải clip đã chọn" (đã có), "Chỉ dựng" (dựng tuần tự, không tải), "Tải lại tất cả" (tải lại các clip đã dựng còn trong bộ nhớ), "Dựng lại clip lỗi", và "Huỷ" khi đang chạy (gọi abortControllerRef; mục đang dựng về Chờ dựng). Các nút khoá khi isProcessing.
+
+3. HÀNH VI SAU KHI DỰNG XONG LƯỢT (chỉ với các clip đã dựng thành công): nếu bật Ghép: renderMergedVideo các mục theo STT, tải "{tênDựÁn}_ghep.mp4"; nếu bật Tải kèm ảnh gốc: fetch variant.blobUrl thành base64 rồi đưa vào downloadQueue với tên cùng clip, đuôi theo mime thật; nếu bật Lưu vào thư viện: Flow.upload từng clip MP4 (lỗi chỉ báo toast); nếu bật Tải manifest: buildManifestJson chỉ với các clip đã dựng thành công, tải "{tênDựÁn}_manifest.json". Ghép và ảnh gốc bỏ qua mục đã giải phóng bộ nhớ, có toast báo.
+
+4. THANH TỔNG dưới cùng: "Đã dựng X/N • đã tải Y • lỗi E" + statusMessage khi đang chạy; mục lỗi hiện message lỗi ở dòng clip.
+
+5. Đổi EffectConfig ở bước 3 sau khi đã dựng: clip chuyển về trạng thái "Cần dựng lại" (so sánh JSON.stringify(effectConfig) lúc dựng), xoá blob cũ.
+
+KIỂM TRA: 3 ảnh ở bước 4, chọn 720p, tên dự án "demo", bật ảnh gốc và ghép, bấm Dựng & tải → 3 clip 720p + 3 ảnh + demo_ghep.mp4 + demo_manifest.json; bấm Chỉ dựng rồi Huỷ thì dừng ngay.

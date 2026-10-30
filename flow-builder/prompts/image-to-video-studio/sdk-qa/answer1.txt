@@ -1,0 +1,60 @@
+CHỈ TRẢ LỜI, KHÔNG SỬA CODE, KHÔNG THAY ĐỔI GÌ TRONG TOOL. Trả lời ngắn gọn, chính xác theo định nghĩa flow-sdk bạn đang có: (1) Danh sách CHÍNH XÁC các giá trị modelDisplayName mà Flow.generate.image chấp nhận (ghi nguyên văn, kể cả emoji), và Nano Banana 2.1 có tên hợp lệ là gì? Có cách nào lấy danh sách model động qua SDK không? (2) Flow.generate.image nhận những tham số nào (negativePrompt, seed, số ảnh...) và trả về mimeType nào (png hay jpeg), kích thước ảnh gốc? (3) Flow.download có giới hạn dung lượng hoặc mimeType nào không, có hỗ trợ application/zip và blob/URL thay vì base64 không, và khi lỗi thì ném lỗi gì? (4) Chạy trong iframe sandbox không có allow-downloads, vậy có cách nào khác để tải file lớn về máy không?
+
+Dưới đây là các câu trả lời ngắn gọn, chính xác theo đặc tả của Flow SDK và môi trường sandbox Flow:
+
+(1) Danh sách modelDisplayName của Flow.generate.image & Lấy động
+Danh sách CHÍNH XÁC hiện có (nguyên văn cả emoji):
+🍌 Nano Banana Pro
+🍌 Nano Banana 2 Lite
+🍌 Nano Banana 2.1
+Tên hợp lệ của Nano Banana 2.1: Chính xác là 🍌 Nano Banana 2.1 (bắt buộc có emoji chuối và khoảng trắng ở đầu). (Lưu ý: Tên cũ Nano Banana 2 đã bị deprecated/thay thế bằng 🍌 Nano Banana 2.1).
+Cách lấy danh sách model động qua SDK: KHÔNG CÓ. Flow SDK hiện tại không cung cấp hàm hay API nào (như Flow.getModels() hay tương đương) để truy vấn danh sách model động từ client. Danh sách model phải được cấu hình tĩnh theo spec của Flow.
+(2) Tham số & Kết quả trả về của Flow.generate.image
+Các tham số nhận vào (ImageGenerateOptions):
+prompt: string (Bắt buộc)
+modelDisplayName: string (Bắt buộc)
+aspectRatio: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' (Tùy chọn, mặc định 16:9 nếu bỏ trống)
+referenceImageMediaIds: string[] (Tùy chọn, mảng mediaId cho chế độ I2I / R2I)
+❌ KHÔNG hỗ trợ: negativePrompt, seed, numberOfImages (số lượng ảnh), steps, hay cfgScale. SDK chỉ sinh 1 ảnh cho mỗi lần gọi.
+MIME type trả về: result.mimeType phụ thuộc vào model và pipeline backend của Flow, thông thường trả về image/jpeg hoặc image/png. Bạn phải đọc trực tiếp từ result.mimeType chứ không được hardcode.
+Kích thước ảnh gốc: SDK không trả về trường width hay height. Muốn biết kích thước, client phải nạp chuỗi base64 vào đối tượng new Image() và đọc img.naturalWidth, img.naturalHeight. Kích thước pixel gốc do backend AI quy định theo aspectRatio được chọn (thường khoảng 1024–1536px tuỳ tỷ lệ).
+(3) Giới hạn & Hành vi của Flow.download
+Hỗ trợ application/zip: CÓ THỰC SỰ ĐƯỢC HỖ TRỢ KHÔNG? 👉 KHÔNG.
+Danh sách mimeType được Flow.download hỗ trợ chỉ bao gồm:
+Ảnh: image/jpeg, image/jpg, image/png, image/gif, image/webp, image/avif, image/heif, image/heic (KHÔNG hỗ trợ SVG).
+Video: video/mp4, video/webm, video/quicktime.
+Audio: audio/mpeg, audio/mp3, audio/wav, audio/x-wav, audio/webm, audio/mp4.
+Văn bản: text/plain, text/markdown, text/csv.
+JSON: application/json.
+application/zip, PDF, TAR, SVG đều BỊ TỪ CHỐI (REJECTED).
+Định dạng dữ liệu đầu vào: Chỉ chấp nhận chuỗi raw base64 hoặc chuỗi Data URL (data:...;base64,...). KHÔNG hỗ trợ Blob, File, hay blob:http... URL.
+Khi lỗi thì ném lỗi gì: Flow.download sẽ ném một ngoại lệ (throw Exception/Error) kiểu runtime validation error:
+Lỗi nếu mimeType không nằm trong danh sách cho phép (unsupported mime type).
+Lỗi nếu đuôi file (filename) không khớp với mimeType đã khai báo.
+Lỗi IPC nếu payload base64 vượt quá ngưỡng truyền tin message giữa iframe và host window.
+(4) Cách tải file lớn về máy khi không có allow-downloads & không dùng ZIP được
+
+Vì iframe sandbox bị chặn triệt để:
+
+Chặn allow-downloads (mọi thẻ <a download> hay URL.createObjectURL(blob) đều bị browser chặn tải).
+Chặn window.open() / popups (không mở tab mới để tải được).
+CSP chặn gọi API ngoài để upload/lưu trữ tạm thời.
+Flow.download từ chối ZIP và dễ nghẽn bộ nhớ IPC nếu cố ép base64 nguyên khối quá nặng.
+
+👉 Giải pháp thực tế duy nhất và tối ưu nhất:
+
+Tải lẻ từng file ảnh/video qua Flow.download tuần tự:
+Dùng vòng lặp for...of với độ trễ nhỏ (setTimeout khoảng 400ms – 800ms giữa mỗi file) để đẩy từng ảnh qua host tải về máy.
+Luôn đặt tên file kèm chỉ số thứ tự rõ ràng (scene_01.jpg, scene_02.jpg...).
+Lưu trữ qua Gallery (Flow.save):
+Với những ảnh tự xử lý/upscale client-side, gọi Flow.save({ base64, mimeType, name }) để lưu trực tiếp vào thư viện Media Gallery của tài khoản Flow. Người dùng có thể xem và tải hàng loạt từ giao diện chính của Flow.
+thumb_up
+thumb_down
+content_copy
+flag
+Bạn muốn tạo gì?
+
+
+
+
+arrow_forward

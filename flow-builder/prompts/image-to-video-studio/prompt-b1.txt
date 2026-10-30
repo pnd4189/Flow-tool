@@ -1,0 +1,23 @@
+Tối ưu độ ổn định khi chạy batch. Chỉ sửa App.tsx, types.ts, services/image.ts. GIỮ NGUYÊN toàn bộ phần tải về (downloadImages, chọn ảnh, tên file), ImageEditor và parser. Lưu ý sandbox KHÔNG có allow-modals nên tuyệt đối không dùng window.confirm/alert/prompt; nếu cần xác nhận thì dùng nút bấm 2 bước (bấm lần 1 đổi nhãn thành "Click again to confirm" trong 3 giây rồi tự về nhãn cũ).
+
+A. Không tạo lại ảnh đã thành công (đang tốn credit vô ích):
+- "Start Batch" và "Launch Batch" chỉ chạy các scene chưa success (pending + error). Nhãn nút hiện số lượng, ví dụ "Start (5 pending)"; disable khi bằng 0.
+- Thêm nút "Regenerate all" (outline, xác nhận 2 bước) để chạy lại toàn bộ scene.
+- "Retry failed (N)" lấy N từ các scene có status 'error' (không dùng batch.failedCount), luôn hiện khi N>0 và batch không chạy.
+- Mỗi card trong Gallery thêm nút icon "refresh" tạo lại riêng scene đó (dùng settings hiện tại), ảnh mới thay ảnh cũ; disable khi batch đang chạy.
+- Các số Total/Success/Failed và thanh tiến trình tính theo trạng thái thật của các scene trong lượt chạy hiện tại. Tiến trình = số scene đã xử lý xong / total (hiện đang tính currentIndex/total nên báo 100% ngay khi scene cuối mới bắt đầu).
+- Khi đổi dropdown Aspect Ratio ở panel phải, áp ratio mới cho mọi scene chưa success.
+
+B. Tự thử lại lỗi tạm thời khi tạo ảnh:
+- Bọc Flow.generate.image bằng timeout 180s (Promise.race); timeout được coi là lỗi tạm thời.
+- Lỗi tạm thời = message (viết thường) chứa một trong: 'tạm thời không hoạt động', 'unavailable', 'busy', 'overloaded', 'rate limit', 'timed out', 'timeout', 'failed to fetch', 'network'. Với lỗi này tự thử lại tối đa 2 lần, chờ 8s rồi 20s, hiện "Retrying (1/2) in 8s" ở Live Execution Log của scene đó; trong lúc chờ vẫn tôn trọng Pause/Stop.
+- Lỗi hết hạn mức/credit (message chứa 'quota' hoặc 'credit') thì DỪNG cả batch ngay, giữ các scene còn lại ở pending, hiện thông báo rõ "Hết hạn mức tạo ảnh - đã dừng batch".
+- Lỗi bộ lọc an toàn/chính sách (chứa 'safety', 'policy', 'blocked') thì không thử lại, đánh dấu error luôn.
+- Bỏ đoạn tự nối câu "Vui lòng nâng cấp gói..." vào mọi lỗi; thay bằng câu trung tính "Flow đang quá tải, đã tự thử lại 2 lần. Bấm Retry failed sau ít phút." khi hết lượt thử lại.
+
+C. Chất lượng và bộ nhớ ảnh (services/image.ts):
+- Ảnh sau upscale luôn xuất JPEG quality 0.92 (đặt result.mimeType = 'image/jpeg' bất kể ảnh gốc là png hay jpeg), để file nhẹ và đồng nhất.
+- Mốc độ phân giải neo theo CẠNH NGẮN: Full HD=1080, 2K=1440, 4K=2160. Kết quả: 16:9 ra 1920x1080 / 2560x1440 / 3840x2160; 9:16 ra 1080x1920; 1:1 ra 1080x1080; 4:3 ra 1440x1080. (Hiện neo theo chiều cao nên ảnh dọc 9:16 bị thu nhỏ còn khoảng 608x1080.)
+- upscaleImage trả thêm thumbBase64: ảnh JPEG chiều rộng tối đa 480px, quality 0.8. Gallery dùng thumbBase64 cho thẻ <img> (không nạp ảnh full-size vào DOM), còn nút edit và download vẫn dùng ảnh full. Lưu thumbBase64 trong scene.result. Sau khi xử lý xong thì giải phóng canvas (width = height = 0).
+
+Kiểm tra lại: build không lỗi, tab Gallery vẫn hiện ảnh, tải về vẫn chạy như cũ.

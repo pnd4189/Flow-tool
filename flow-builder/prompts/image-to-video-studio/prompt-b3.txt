@@ -1,0 +1,8 @@
+Sửa độ phân giải đầu ra cho đúng chuẩn đã yêu cầu ban đầu: Full HD phải đúng 1920x1080, 2K đúng 2560x1440, 4K đúng 3840x2160. Hiện kích thước đích đang tính theo tỷ lệ pixel của ảnh gốc Flow trả về (ví dụ 1376x768 không đúng 16:9 tuyệt đối) nên đã đo thực tế ra 4:3 → 1446x1080 và 9:16 → 1080x1935 (16:9 sẽ ra 1935x1080). Chỉ sửa services/image.ts và các chỗ gọi upscaleImage trong App.tsx; giữ nguyên mọi thứ khác.
+
+- upscaleImage nhận thêm tham số aspectRatio (kiểu AspectRatio của scene: '1:1' | '16:9' | '9:16' | '4:3' | '3:4'). Kích thước đích tính từ tỷ lệ ĐƯỢC YÊU CẦU, neo cạnh ngắn theo RESOLUTION_MAP (S = 1080 / 1440 / 2160): ảnh ngang (w>h): height = S, width = round(S*w/h); ảnh dọc: width = S, height = round(S*h/w); vuông: S x S. Kết quả: 16:9 → 1920x1080 / 2560x1440 / 3840x2160; 4:3 → 1440x1080; 3:4 → 1080x1440; 9:16 → 1080x1920; 1:1 → 1080x1080.
+- Nếu tỷ lệ ảnh gốc lệch tỷ lệ đích thì cắt giữa (center crop kiểu cover) phần dư của ảnh gốc cho khớp tỷ lệ đích TRƯỚC khi resize, tuyệt đối không kéo giãn ảnh. Sau đó dùng pica Lanczos resize ra đúng kích thước đích, giữ nguyên unsharp mask hiện tại và JPEG quality 0.92.
+- Giữ nguyên thumbnail (max 480px) và việc giải phóng canvas.
+- Cập nhật mọi chỗ gọi upscaleImage trong App.tsx để truyền scene.aspectRatio (kể cả luồng tạo lại từng ảnh).
+
+Kiểm tra lại: chọn 16:9 + Full HD thì card Gallery phải hiện đúng 1920×1080; 9:16 + Full HD hiện đúng 1080×1920.

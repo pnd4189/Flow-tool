@@ -1,0 +1,28 @@
+NÂNG CẤP v2 — ĐỢT 4: KỊCH BẢN (TẢI LÊN + AI VIẾT KỊCH BẢN HOẠT HÌNH + AI HOÀN THIỆN). Tool chuyên hoạt hình 2D. Tạo services/scriptImport.ts và services/scriptWriter.ts; sửa components/ScriptEngine.tsx, services/shotengine.ts, CharacterVault (chỉ thêm hàm tạo nhân vật từ đề xuất). Giữ nguyên các tính năng khác. Không dùng window.confirm/alert/prompt. Flow.generate.text(prompt, { systemInstruction, thinkingLevel }) → { text }, 0 credit. KHÔNG viết logic dài trong App.tsx.
+
+A. TẢI KỊCH BẢN LÊN (tab mới "Tải file" trong bước Kịch bản, cạnh "Kịch bản tay" và "AI viết kịch bản"):
+- Nút chọn file (input ẩn) nhận .txt, .md, .fountain, .srt, .csv, .json; đọc bằng file.text() (UTF-8). Hiện tên file, số dòng, và bản xem trước 30 dòng đầu.
+- services/scriptImport.ts tự nhận dạng:
+  • .json: nếu là file phiên của tool (version + shots) thì báo "Đây là file phiên, dùng nút Mở phiên"; nếu là mảng/đối tượng storyboard { scenes: [{ title, environment, shots: [{ action, dialogue, ... }] }] } thì nhập thẳng.
+  • .csv: dòng tiêu đề nhận các cột scene, action, dialogue, shot_size, camera, notes (không phân biệt hoa thường, cột thiếu thì bỏ qua); mỗi dòng = 1 shot, gom theo cột scene.
+  • .srt: mỗi khối phụ đề = 1 shot, nội dung khối là dialogue và action = "speaks";
+  • Văn bản (.txt/.md/.fountain): dòng tiêu đề cảnh (bắt đầu bằng "INT."/"EXT.", "SCENE n", "CẢNH n", "Cảnh n:", hoặc tiêu đề markdown #, ##) mở scene mới (environment = phần mô tả sau tiêu đề); dòng thoại dạng "TÊN: lời thoại" hoặc "TÊN — lời thoại" gán vào audioDialogue của shot gần nhất (và gắn nhân vật trùng tên trong Vault nếu có); các dòng còn lại mỗi dòng = 1 shot; đoạn văn dài (> 300 ký tự, không xuống dòng) thì cắt theo ranh giới câu, mỗi 1–2 câu = 1 shot.
+- Sau khi nhập: hiện tóm tắt "N scene • M shot • K lời thoại" và nút "Nhập vào storyboard" (lựa chọn Thay thế / Thêm vào cuối). Gợi ý ngay bên dưới: "Nên bấm 'AI hoàn thiện kịch bản' để dịch hành động sang tiếng Anh, điền bối cảnh, tư thế và âm thanh".
+
+B. AI VIẾT KỊCH BẢN HOẠT HÌNH (tab "AI viết kịch bản", thay form cũ):
+- Form: Ý tưởng (bắt buộc, nhiều dòng); Thể loại (Phiêu lưu, Hài hước, Cổ tích, Học đường, Kỳ ảo/phép thuật, Hành động, Cảm động/gia đình, Bí ẩn nhẹ, Khoa học viễn tưởng, Giáo dục thiếu nhi); Khán giả (Trẻ em, Thiếu niên, Mọi lứa tuổi, Người lớn); Cấu trúc (Long: "3 hồi: mở – thắt – mở nút"; Short: "Hook 3 giây – phát triển – cao trào – kết bất ngờ"); Ngôn ngữ thoại (Tiếng Việt, English, Không thoại – chỉ âm thanh); Số shot = số shot mục tiêu hiện tại; dùng nhân vật trong Vault nếu có, nếu Vault trống thì cho AI đề xuất tối đa 3 nhân vật.
+- services/scriptWriter.ts chạy 2 bước để đủ dài và mạch lạc:
+  1) DÀN Ý: 1 lần gọi trả JSON { title, logline, characters: [{ name, faceShape, eyes, hairstyle, skinTone, outfit, accessories, proportions, palette }] (chỉ khi Vault trống), scenes: [{ title, environment, timeOfDay, weather (id), lighting (id), beats: [string], shotCount }] } với tổng shotCount = số shot mục tiêu. Hiện dàn ý cho người dùng xem/sửa nhanh (tiêu đề, logline, danh sách scene + số shot), nút "Viết chi tiết".
+  2) CHI TIẾT: mỗi scene 1 lần gọi (tuần tự, có tiến trình "Đang viết scene 2/6", nút Huỷ), trả JSON shots: [{ action (tiếng Anh, 1 hành động rõ ràng nhìn thấy được), actionVi (tiếng Việt ngắn để hiển thị), subject, characterNames: [string], dialogue (theo ngôn ngữ đã chọn, ≤ 12 từ vì shot chỉ 8 giây, rỗng nếu không thoại), startPose, endPose, shotSize, cameraAngle, cameraMovement, lens, effects (≤3), ambient, sfx, transitionIn }] — mọi trường id phải thuộc DANH SÁCH ID hợp lệ của services/library.ts (gửi kèm danh sách trong prompt); endPose của shot N khớp startPose của shot N+1 khi transitionIn của N+1 là 'chain'; shot đầu mỗi scene là cảnh mở. Mỗi lần gọi kèm logline + tóm tắt các scene trước để liền mạch.
+- Kiểm tra id (sai thì dùng mặc định), chịu hàng rào markdown, lỗi hiện err.message + 200 ký tự đầu phản hồi, có nút "Thử lại scene này".
+- Nếu AI đề xuất nhân vật: hiện thẻ "Nhân vật đề xuất" với nút "Thêm vào Vault" (tạo Character với đủ DNA, chưa có ảnh; người dùng sinh model sheet ở bước Nhân vật). Shot gắn characterIds theo characterNames.
+- actionBeat của shot = actionVi (để hiển thị), action = bản tiếng Anh (dùng cho prompt).
+
+C. AI HOÀN THIỆN KỊCH BẢN (nút ở bước Kịch bản, dùng cho kịch bản tay/tải lên, 0 credit): theo lô ≤ 15 shot, gửi actionBeat + scene + tên nhân vật trong Vault; AI trả cho mỗi shot { order, action (tiếng Anh), subject (ai đang xuất hiện, mô tả ngắn bằng tiếng Anh), characterNames, startPose, endPose, ambient, sfx } và cho mỗi scene { environment, timeOfDay, weather, lighting } nếu scene đang trống. Màn xem trước dạng bảng cũ → mới, nút "Áp dụng tất cả"/"Huỷ". Không ghi đè trường người dùng đã tự nhập (chỉ điền ô trống), trừ khi tick "Ghi đè tất cả".
+
+D. SỬA TRÌNH BIÊN DỊCH:
+- Keyframe luôn có chủ thể và khoảnh khắc: sau phần pose thêm " Moment: {action || actionBeat}." và nếu shot không gắn nhân vật trong Vault nhưng có subject thì chèn "{subject}." trước pose.
+- Bỏ dấu chấm kép: cắt dấu câu cuối của action/pose trước khi nối thêm dấu chấm.
+- Nếu shot có characterIds mà nhân vật chưa có ảnh model sheet, hiện cảnh báo vàng trên shot "Nhân vật chưa có model sheet — keyframe sẽ kém nhất quán".
+
+KIỂM TRA: tải 1 file .txt có "CẢNH 1: sân ga quê" + 3 dòng + 1 dòng "MIRA: Đợi tớ với!" → ra 1 scene, 3 shot, 1 lời thoại; AI viết kịch bản Short 6 shot từ 1 câu ý tưởng → dàn ý rồi chi tiết đủ 6 shot hợp lệ; AI hoàn thiện điền environment cho scene trống; prompt keyframe có "Moment:" và không còn "..".

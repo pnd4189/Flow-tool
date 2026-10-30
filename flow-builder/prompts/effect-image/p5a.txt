@@ -1,0 +1,20 @@
+EFFECT-IMAGE — ĐỢT 5A: SỬA LỖI ĐÃ ĐO ĐƯỢC. CHỈ sửa đúng các chỗ nêu dưới đây, KHÔNG viết lại file, không đổi giao diện khác; không dùng window.confirm/alert/prompt.
+
+(1) services/promptParser.ts, hàm extractParametersAndClean bị mất tính năng khi viết lại (đã chạy thật: prompt "... 2D cel shading --ar 9:16 --v 6 --style raw" bị gửi nguyên "--v 6 --style raw" lên model). Khôi phục đúng các bước sau, trước đoạn dọn dẹp cuối:
+- Sau khi xử lý --ar: nếu không có --ar thì đọc tỷ lệ trong ngoặc: const bracketMatch = prompt.match(/\(([0-9]+:[0-9]+)\)/i); có thì mapToNearestAspectRatio, gán aspectRatio, xoá khỏi prompt.
+- Sau --no: nếu chưa có negative: const negMatch = prompt.match(/(?:negative\s*prompt|negative|tránh|avoid)\s*:\s*([^-\n]+(?:\s+[^-\n]+)*?)(?=\s+--|$)/i); có thì gán negative, xoá khỏi prompt.
+- Bỏ cờ Midjourney: const mjFlagsRegex = /--(?:v\s*\d+(?:\.\d+)?|style\s*[\w-]+|q\s*[\d.]+|s\s*\d+|chaos\s*\d+|seed\s*\d+|niji\s*\d*)/gi; nếu khớp thì warnings.push('Đã loại bỏ tham số MJ (--v, --style...)') và prompt = prompt.replace(mjFlagsRegex, ' ').trim().
+- Trong đoạn dọn dẹp cuối thêm .replace(/,\s*$/, '') (xoá dấu phẩy lạc ở cuối).
+Hàm này phải được dùng ở mọi nhánh phân tích (cả nhánh chạy theo từng đoạn cho file lớn, JSON, CSV).
+
+(2) App.tsx handleStartAutoPilot: initialQueue đang lấy prompts.map(...) nên prompt đã BỎ TICK vẫn bị chạy. Sửa: chỉ đưa vào hàng đợi prompt có p.selected (và các prompt 'Đã xong (từ manifest)' như hiện nay); p.order giữ nguyên số gốc.
+
+(3) Chế độ tự động đang bỏ qua cài đặt người dùng: trong services/autoPilot.ts runGenerateSingle, dummySettings gán cứng styleSuffix: '', addNoWatermark: true, translateVietnamese: true. Sửa: thêm vào AutoPilotConfig 3 trường styleSuffix, addNoWatermark, translateVietnamese và dùng chúng; handleStartAutoPilot truyền translateVietnamese từ công tắc ở bước 1 và styleSuffix/addNoWatermark từ cài đặt sinh ảnh chung. Trong modal "Tuỳ chỉnh" của chế độ tự động thêm ô "Hậu tố phong cách" (nối vào cuối mọi prompt, dùng chung state với ô ở bước 2) và công tắc "Thêm 'no watermark'"; dòng tóm tắt hiện hậu tố khi có.
+
+(4) Tên file: buildFilename có tham số thứ 7 totalPromptCount (quyết định 2 hay 3 chữ số). Mọi nơi gọi phải truyền đúng tổng số prompt của file gốc (cả buildManifestJson trong services/exportService.ts và components/Step4Export.tsx), để với ≥ 100 prompt tên trong manifest và tên file thật đều là 3 chữ số. Tổng này tính theo toàn bộ prompt đã nạp, không phụ thuộc số đã bỏ tick, để chạy tiếp không đổi tên.
+
+(5) images_only: khi QC sinh lại và ảnh thứ hai được chọn, handleDirectImageDownload vẫn tải ảnh đầu (genResult). Sửa: tải đúng ảnh đang được chọn trong qItem.variants[0] (giữ base64 + mime của ảnh thắng), và dimensions trong manifest lấy kích thước thật của ảnh, không gán cứng 1024×1024.
+
+(6) "Ảnh hôm nay": onSyncBackToState đang ghi đè bộ đếm bằng số ảnh của lượt hiện tại. Sửa: mỗi ảnh sinh thành công trong chế độ tự động cộng 1 vào bộ đếm hiện có, không ghi đè.
+
+KIỂM TRA: dán "A red fox --ar 9:16 --v 6 --style raw" → prompt còn "A red fox", tỷ lệ 9:16, có ghi chú đã bỏ tham số MJ; "A blue bird (1:1) Negative: blurry" → tỷ lệ 1:1, negative "blurry"; bỏ tick 1 prompt rồi chạy tự động → prompt đó không chạy; đặt hậu tố phong cách → xuất hiện trong sentPrompt của manifest.

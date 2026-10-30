@@ -1,0 +1,1 @@
+EFFECT-IMAGE — SỬA 1 CHỖ, không sửa gì khác: trong hàm estimateRun của services/autoPilot.ts, nhịp khâu tách lớp đang tính theo 25 giây mỗi ảnh parallax; đo thật là 30 giây. Đổi 25 thành 30 (vẫn nhân với tỷ lệ ảnh bật parallax). Không đổi file nào khác.

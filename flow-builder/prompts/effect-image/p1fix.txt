@@ -1,0 +1,13 @@
+SỬA BỘ TÁCH PROMPT (services/promptParser.ts) — đã test thật với file trộn kiểu:
+"1. A cozy 2D anime bakery ...\n2. An old lighthouse ...\n\nMột khu rừng tre xanh mướt ...\n\nPrompt 4: A young girl inventor ... --ar 9:16 --v 6 --style raw\nNegative: blurry, extra fingers"
+Kết quả sai: chỉ ra 1 prompt (kiểu "Đánh dấu đầu dòng"), BỎ MẤT 3 prompt phía trên marker; negative chỉ còn "blurry" còn ", extra fingers" bị dính vào cuối prompt. Đúng phải là 4 prompt.
+
+Viết lại thuật toán theo kiểu PHÂN ĐOẠN TỔNG HỢP (không chọn một kiểu duy nhất cho cả file), trừ JSON/CSV vẫn xử lý riêng như cũ:
+1. Duyệt từng dòng. Dòng là RANH GIỚI mở prompt mới nếu: bắt đầu bằng marker (Prompt n:, PROMPT #n, Ảnh n:, Hình n -, Image n:, Scene n:, Cảnh n:, --- SCENE n ---, [n], #n), hoặc bắt đầu bằng số thứ tự danh sách (1. / 1) / 1 - / (1)), hoặc là tiêu đề markdown (#, ##, ###…), hoặc ngay sau một hoặc nhiều dòng trống, hoặc ngay sau dòng phân cách (---, ===, ***, ___ đứng riêng; bản thân dòng phân cách bị bỏ).
+2. Dòng THAM SỐ gắn vào prompt đang mở chứ không mở prompt mới và không nối vào nội dung: dòng bắt đầu bằng "Negative:", "Negative prompt:", "Tránh:", "Avoid:" → negative = TOÀN BỘ phần sau dấu hai chấm tới hết dòng (giữ nguyên dấu phẩy); dòng bắt đầu bằng "Ratio:", "Aspect ratio:", "Tỉ lệ:", "Tỷ lệ:" → aspectRatio; dòng chỉ gồm cờ --ar/--no/--v… → xử lý như cờ.
+3. Các dòng khác nối vào prompt đang mở bằng dấu cách. Văn bản TRƯỚC marker đầu tiên KHÔNG BAO GIỜ bị bỏ.
+4. Chế độ "mỗi dòng 1 prompt" chỉ dùng khi toàn văn bản không có dòng trống, không có marker/số thứ tự/tiêu đề, và có ≥ 2 dòng dài ≥ 20 ký tự.
+5. Nhãn nhận dạng hiển thị các kiểu đã gặp, ví dụ "Danh sách đánh số + đoạn văn + marker • 4 prompt".
+6. Độ tin cậy: nếu số prompt tách được ít hơn một nửa số "đoạn nội dung" (khối cách nhau bởi dòng trống) hoặc có prompt > 1500 ký tự thì hiện cảnh báo vàng "Có thể tách chưa đúng — thử 'AI tách lại'".
+7. "--no a, b" → negative = "a, b" (cộng dồn với dòng Negative nếu có).
+KIỂM TRA bằng đúng văn bản trên: ra 4 prompt; #4 có tỷ lệ 9:16, negative "blurry, extra fingers", prompt không còn "--v 6 --style raw" và không có ", extra fingers".

@@ -1,0 +1,9 @@
+CHỈ TRẢ LỜI, KHÔNG SỬA CODE, KHÔNG THAY ĐỔI GÌ TRONG TOOL. Trả lời theo đúng định nghĩa flow-sdk bạn có (chữ ký TypeScript nguyên văn); chỗ nào không chắc thì ghi "không chắc", không đoán.
+1) Flow.generate.video: liệt kê ĐẦY ĐỦ các trường của options. Có trường nào để EXTEND một video có sẵn (sourceVideoMediaId + mode 'extend'?), sourceVideoMode nhận những giá trị nào? Có numberOfVideos/seed/negativePrompt/generateAudio không? audioReferenceMediaIds lấy mediaId giọng nói từ đâu?
+2) Có được truyền referenceImageMediaIds CÙNG LÚC với firstFrameImageMediaId/lastFrameImageMediaId không (với từng model)?
+3) Flow.generate.image: referenceImageMediaIds tối đa bao nhiêu ảnh; có chế độ "chỉnh sửa ảnh" (truyền 1 ảnh gốc + prompt mô tả thay đổi) không hay chỉ là tham chiếu?
+4) Flow.upload: chữ ký, giới hạn dung lượng, có tốn credit không, ảnh upload có hiện trong thư viện dự án không?
+5) Flow.generate.text: tối đa bao nhiêu ảnh trong options.images một lần gọi, giới hạn kích thước prompt, có tốn credit không?
+6) Tool có API nào để: đặt tên/đổi tên media đã tạo, thêm clip vào Scenebuilder của Flow, đọc danh sách media trong dự án (không qua hộp chọn), hay xoá media không?
+7) Flow.media.select / selectMultiple trả về những trường nào; ảnh trả về có kèm mediaId để dùng lại làm firstFrame/reference không?
+8) Có sự kiện/callback nào khi người dùng đóng tool hoặc tải lại trang để tool kịp lưu dữ liệu không?

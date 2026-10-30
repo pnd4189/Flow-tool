@@ -1,0 +1,7 @@
+Sửa 2 lỗi logic trong components/VideoStudio.tsx (đã đọc code và thử trên giao diện). Giữ nguyên mọi thứ khác.
+
+1. Hàng đợi không tự chạy: trong handleStartGeneration, sau setJobs(prev => [...prev, ...newJobs]) thì processQueue(newJobs) được gọi ngay, nhưng jobsRef.current chỉ được gán trong lúc render (jobsRef.current = jobs) nên lúc đó chưa chứa job mới. Vòng lặp trong processQueue gọi jobsRef.current.find(...) không thấy job nào nên bỏ qua hết, job mới nằm ở trạng thái 'pending' và người dùng phải bấm "Tiếp tục chạy". Sửa bằng cách cập nhật jobsRef.current ĐỒNG BỘ ngay khi thêm job (jobsRef.current = [...jobsRef.current, ...newJobs]) trước khi gọi processQueue, và đảm bảo mọi chỗ khác gọi processQueue (Tiếp tục chạy, Thử lại job) cũng đọc được trạng thái mới nhất. Sau khi sửa, bấm "Tạo video" phải chạy ngay job đầu tiên mà không cần bấm thêm nút nào.
+
+2. Số credit còn lại bị cũ trong vòng chạy: processQueue gọi creditsLeft(usageState) với usageState chụp lúc bắt đầu chạy nên không giảm sau mỗi video hoàn thành. Dùng một ref luôn trỏ tới usageState mới nhất (usageStateRef.current = usageState trong lúc render) và đọc creditsLeft(usageStateRef.current) ở đầu mỗi job.
+
+Kiểm tra lại: tạo 2 job liên tiếp, job thứ hai bắt đầu tự động sau job thứ nhất, và credit còn lại giảm đúng sau mỗi video thành công.

@@ -1,0 +1,11 @@
+SỬA 4 LỖI BƯỚC KỊCH BẢN (đã test và đọc code). Giữ nguyên mọi thứ khác.
+
+1. Nút "+ Thêm vào Vault" không làm gì: App.tsx render <ScriptEngine ...> nhưng KHÔNG truyền prop onAddCharacter, nên handleAddProposedCharacterToVault gặp "if (!onAddCharacter) return" và thoát im lặng. Sửa: truyền onAddCharacter={handleAddCharacter} cho ScriptEngine. Đồng thời không bao giờ return im lặng: nếu thiếu callback thì hiện toast lỗi.
+
+2. Shot không được gắn nhân vật: shot do AI viết chỉ có characterNames, mà lúc đó Vault còn trống nên characterIds rỗng. Sửa: lưu characterNames trên Shot (types.ts); mỗi khi danh sách nhân vật trong Vault thay đổi (thêm/sửa tên), tự gắn characterIds cho mọi shot có characterNames trùng tên (không phân biệt hoa thường, bỏ dấu), không xoá gắn kết người dùng đã tự chọn. Nút "Thêm tất cả vào Vault" cho thẻ nhân vật đề xuất.
+
+3. Form AI viết kịch bản bị reset khi chuyển bước: ScriptEngine bị unmount nên mất ý tưởng, dàn ý, nhân vật đề xuất, tiến trình. Sửa: giữ ScriptEngine luôn được mount (ẩn bằng class 'hidden' khi ở bước khác) hoặc chuyển state của nó lên App. Việc đang chạy (đang viết chi tiết, đang hoàn thiện) không bị huỷ khi đổi bước.
+
+4. Ngôn ngữ trường dữ liệu: DNA nhân vật (faceShape, eyes, hairstyle, skinTone, outfit, accessories, proportions, palette), environment, timeOfDay của scene, action, subject, startPose, endPose, ambient, sfx PHẢI bằng tiếng Anh vì được đưa vào prompt cho model ảnh/video (hiện AI đang trả DNA và environment bằng tiếng Việt). Cập nhật systemInstruction của dàn ý, viết chi tiết, AI hoàn thiện, gợi ý DNA: các trường trên viết bằng tiếng Anh; chỉ title, logline, actionVi (hiển thị) và dialogue (theo ngôn ngữ người dùng chọn) được dùng tiếng Việt. Thêm environmentVi (tiếng Việt, chỉ để hiển thị) cho scene. Với dữ liệu đã có bằng tiếng Việt: nút "AI hoàn thiện kịch bản" có lựa chọn "Dịch các trường prompt sang tiếng Anh".
+
+KIỂM TRA: AI viết kịch bản Short 6 shot → bấm "Thêm tất cả vào Vault" → bước Nhân vật có 2 nhân vật, DNA bằng tiếng Anh; các shot nhắc tên nhân vật được gắn đúng; chuyển sang bước khác rồi quay lại vẫn còn dàn ý.

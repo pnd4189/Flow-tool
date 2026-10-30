@@ -1,0 +1,15 @@
+Sửa tool theo đúng các yêu cầu dưới đây. Chỉ đụng vào App.tsx, types.ts, services/image.ts; KHÔNG sửa ImageEditor, parser, logic tạo ảnh. Giữ nguyên mọi tính năng khác.
+
+1. MODEL: đổi MODELS thành ['🍌 Nano Banana 2.1', '🍌 Nano Banana Pro', '🍌 Nano Banana 2 Lite'] (bỏ '🍌 Nano Banana 2'). Model mặc định trong settings là '🍌 Nano Banana 2.1'. Truyền modelDisplayName đúng nguyên văn chuỗi này vào Flow.generate.image.
+
+2. TẢI VỀ - làm lại hoàn toàn. Flow.download KHÔNG chấp nhận application/zip (đã kiểm chứng: ngay cả ZIP chỉ có 1 ảnh cũng báo "Dịch vụ tạm thời không hoạt động"), và sandbox không có allow-downloads nên không dùng được <a download>/blob URL. Vì vậy:
+- Xoá hẳn JSZip (import, code, package), handleDownloadAll, handleDownloadSplitZIP và 2 nút "ZIP chia 3", "ZIP Full". Không thử ZIP nữa.
+- Mỗi card trong Gallery có checkbox chọn ảnh (góc trên trái, luôn hiện) và nút icon download để tải riêng ảnh đó. Thanh header Gallery có: "Select all"/"Clear", bộ đếm "N selected", nút "Download all (N)" và nút "Download selected (N)" (chỉ bật khi có ảnh được chọn).
+- Viết một hàm downloadImages(items) dùng chung cho cả 3 kiểu tải: tải TUẦN TỰ từng ảnh bằng Flow.download({ base64, mimeType, filename }), nghỉ 700ms giữa các file. Nếu một ảnh lỗi thì thử lại tối đa 2 lần nữa (chờ 1.5s rồi 3s), vẫn lỗi thì ghi nhận và tiếp tục ảnh kế tiếp, không dừng cả loạt.
+- Thanh tiến trình trong header hiện "Đang tải i/N - tên file" kèm phần trăm, và có nút Cancel (dừng sau file hiện tại). Khi đang tải thì khoá các nút tải; dùng một ref chống bấm đúp để không chạy 2 lượt cùng lúc.
+- Kết thúc hiện thông báo tóm tắt "Đã tải X/N ảnh". Nếu có ảnh lỗi thì liệt kê tên file lỗi kèm thông báo lỗi thật (err.message) và nút "Tải lại ảnh lỗi" chỉ chạy lại các ảnh lỗi đó.
+- Tên file: `${String(sceneNumber).padStart(3,'0')}_${slug}.${ext}`. sceneNumber là vị trí 1-based của scene trong danh sách scenes gốc (không đổi khi xoá scene khác). slug = title chuẩn hoá NFD bỏ dấu tiếng Việt (đ→d), chữ thường, ký tự không phải [a-z0-9] đổi thành '_', gộp '_' liền nhau, cắt tối đa 40 ký tự, rỗng thì dùng 'scene'. ext lấy từ mimeType (jpeg→jpg) và PHẢI khớp mimeType vì Flow.download kiểm tra đuôi file.
+
+3. THÔNG TIN ẢNH: upscaleImage trả thêm width, height; lưu vào scene.result cùng bytes (≈ base64.length*3/4) và mimeType thực tế. Mỗi card Gallery hiện dòng "16:9 • 1920×1080 • JPEG • 0.8 MB" theo số liệu thật của ảnh, thay cho dòng hiện tại (đang chỉ ghi settings.resolution).
+
+Sau khi sửa phải đảm bảo không còn tham chiếu nào tới jszip, build không lỗi, và các tab Prompt/Batch/Gallery vẫn chạy như cũ.

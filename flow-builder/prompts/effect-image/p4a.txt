@@ -1,0 +1,18 @@
+EFFECT-IMAGE — ĐỢT 4A: 4 CHẾ ĐỘ TỰ ĐỘNG + CHẠY BỀN CHO FILE LỚN (≥ 300 PROMPT). Sửa services/autoPilot.ts, components/AutoPilotPanel.tsx, khối "⚡ TỰ ĐỘNG 100%" ở bước 1, services/exportService.ts, services/downloadQueue.ts, services/layerService.ts. Dùng lại logic sẵn có, không viết lại; giữ nguyên chế độ thủ công; không dùng window.confirm/alert/prompt.
+
+A. 4 CHẾ ĐỘ (chọn bằng 4 thẻ lớn trong khối tự động, mỗi thẻ ghi rõ làm gì + ước tính thời gian cho N prompt hiện tại; nút "Tuỳ chỉnh" vẫn giữ để chỉnh chi tiết):
+ 1. "Auto đầy đủ": AI chọn máy quay + hiệu ứng phủ + parallax (khi AI bật).
+ 2. "Auto không parallax": AI chọn máy quay + hiệu ứng phủ; parallax luôn tắt, không gọi tách lớp.
+ 3. "Auto chỉ chuyển động máy quay": AI chỉ chọn camera.move/intensity/focus/durationSec (systemInstruction riêng, chỉ trả JSON camera + durationSec + reason); overlays = [] và parallax tắt; vẫn có fadeInOut.
+ 4. "Chỉ sinh ảnh": sinh ảnh + AI soi ảnh, không chọn hiệu ứng, không dựng video; tải ảnh gốc (đuôi theo mime thật) + manifest.
+ Chế độ đang chọn ghi vào manifest ("mode"). Ước tính thời gian dùng số đo thật: sinh ảnh ~28s/ảnh/luồng, AI chọn hiệu ứng ~9s/ảnh, tách lớp ~50s/ảnh/luồng (giả định 75% ảnh bật), dựng 1080p ~8s/clip; các khâu chạy dây chuyền nên tổng ≈ N × thời gian của khâu chậm nhất + khởi động; sau khi chạy được ≥ 5 ảnh thì thay bằng thời gian trung bình đo thực tế.
+
+B. BỘ NHỚ (bắt buộc cho file lớn): tải xong clip nào thì giải phóng ngay Blob/objectURL của clip đó (URL.revokeObjectURL), chỉ giữ metadata (tên file, dung lượng, thời gian dựng); với chế độ tự động, sau khi clip đã tải xong thì cũng giải phóng ảnh gốc độ phân giải đầy đủ và 2 lớp parallax của ảnh đó (giữ thumbnail 512px, mediaId, EffectConfig, QC) — mục đó hiện nhãn "Đã giải phóng bộ nhớ"; muốn dựng lại thì nút "Nạp lại ảnh" mở Flow.media.select để chọn lại ảnh từ thư viện (khớp theo mediaId nếu được). Lớp parallax lưu dạng Blob, không giữ chuỗi base64 trong state. Hiện dung lượng bộ nhớ ước tính đang giữ trên bảng tiến trình.
+
+C. CHIA LÔ + ĐIỂM LƯU: cài đặt "Kích thước lô" 10/25/50 (mặc định 25). Mỗi khi đủ 1 lô clip (hoặc ảnh, ở chế độ 4) đã tải xong, tự tải "{tênDựÁn}_manifest_lo{STT 2 chữ số}.json" chứa các mục của lô đó (cùng định dạng manifest hiện tại + "promptKey" = prompt gốc chuẩn hoá: chữ thường, gộp khoảng trắng, bỏ dấu câu cuối); hết lượt thì tải thêm manifest tổng như hiện nay. STT trong tên file dùng 3 chữ số khi N ≥ 100 (001…300) và là số thứ tự prompt trong file gốc, không đổi khi chạy tiếp.
+
+D. CHẠY TIẾP SAU SỰ CỐ: ở bước 1 thêm nút "Chạy tiếp từ manifest…" (chọn nhiều file .json): đọc mọi manifest/manifest_lo đã tải, đánh dấu các prompt có promptKey trùng là "Đã xong (từ manifest)" và bỏ qua khi chạy tự động; hiện "Đã xong X/N từ lượt trước • còn lại Y". Tên dự án lấy theo manifest nếu có.
+
+E. ỔN ĐỊNH KHI CHẠY LÂU: (1) tách lớp parallax chạy 2 luồng; (2) tự giảm số luồng sinh ảnh xuống 1 khi gặp ≥ 3 lỗi 'rate limit'/'busy'/'quá tải' trong 2 phút, sau 5 phút ổn định thì tăng lại; (3) nếu 5 mục liên tiếp lỗi (không phải an toàn) ở bất kỳ khâu nào thì TỰ TẠM DỪNG và hiện băng đỏ "Có thể mất kết nối hoặc phiên Flow đã hết hạn. Tải lại trang Flow rồi dùng 'Chạy tiếp từ manifest'." — các lô đã xong vẫn còn manifest; (4) xin navigator.wakeLock.request('screen') khi bắt đầu (lỗi thì bỏ qua, hiện nhắc "Tắt chế độ ngủ của máy"); (5) trước khi chạy hiện "Dự kiến ~K lượt sinh ảnh (ảnh + lớp parallax + sinh lại do QC)" và cảnh báo vàng nếu K > 800.
+
+KIỂM TRA: 4 chế độ đều chạy hết với 4 prompt; manifest_lo01 tải ra sau mỗi lô; chạy 6 prompt với lô 3, dừng sau lô 1, tải lại trang, nạp manifest_lo01 → chỉ chạy 3 prompt còn lại, tên file giữ đúng STT.

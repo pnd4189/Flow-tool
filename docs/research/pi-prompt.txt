@@ -1,0 +1,9 @@
+Task: fact-check, read-only research. Do NOT create, edit or delete any files; only run web searches.
+Tools: use bash with the local CLI `search-gw` for the web. Examples: `search-gw search "query" --deep --max 8`, `search-gw extract <url>`.
+
+Question: For a Google AI Ultra subscriber using Google Flow (labs.google/fx/tools/flow, flow.google.com), what are the DAILY IMAGE GENERATION limits?
+1) Is there an official limit of 1000 images per day in Google Flow for Ultra? Or does the "1000 images/day" figure come from the Gemini app (gemini.google.com) limits instead?
+2) Per model limits (Nano Banana Pro, Nano Banana 2.1, Nano Banana 2 Lite, older Nano Banana / Gemini 2.5 Flash Image): the number of images per day for Free, AI Plus, AI Pro, AI Ultra, in Flow and in the Gemini app, if published.
+3) Does Flow charge credits for image generation, or is it free/limited by a daily quota?
+Prefer official Google pages (support.google.com, blog.google, gemini.google/subscriptions). For each claim give the exact quoted sentence, the URL, and the date of the page. Clearly separate: (A) official Google statements, (B) third-party claims, (C) not found. If a number is not published, say "not published" — do not guess.
+Answer in English, concise, max 400 words.

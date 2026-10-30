@@ -1,0 +1,14 @@
+Thêm CHẤM ĐIỂM BẰNG AI và CHỌN CAMERA TỰ ĐỘNG cho Video Studio. Sửa services/storyboard.ts (hoặc tạo services/aiPicker.ts), services/autoPick.ts, components/VideoStudio.tsx. KHÔNG viết logic dài trong App.tsx. GIỮ NGUYÊN mọi tính năng khác (kể cả chấm điểm cục bộ đã có). Không dùng window.confirm/alert/prompt. Flow.generate.text(prompt, { systemInstruction, thinkingLevel, images: [{ base64, mimeType }] }) trả về { text }; lời gọi này không tốn credit (đã đo).
+
+1. Chiến lược chọn mới "AI chọn (đa dạng + dễ chuyển động)" bên cạnh Phủ đều / Điểm cao nhất / Cân bằng:
+- aiRateScenes(items, onProgress, signal): chia ảnh thành các lô tối đa 12 ảnh; mỗi lô gọi Flow.generate.text một lần, gửi thumbBase64 (image/jpeg) của các ảnh trong lô kèm danh sách "Ảnh i: <prompt tạo ảnh, cắt 200 ký tự>". systemInstruction yêu cầu CHỈ trả về mảng JSON [{ "i": số thứ tự trong lô, "score": 0-100, "camera": id kiểu camera phù hợp nhất lấy từ danh sách CAMERA_PRESETS, "reason": tối đa 12 từ }]. Tiêu chí score: chất lượng hình ảnh (nét, không méo tay chân, không chữ lỗi), chủ thể rõ ràng, tiềm năng chuyển động đẹp khi thành video, tính điện ảnh. Tuần tự từng lô, tiến trình "AI chấm điểm 2/10", có nút Huỷ, bỏ qua lô lỗi (ghi lỗi thật trên các ảnh đó) và tiếp tục.
+- Điểm cuối = 0.6 × điểm AI + 0.4 × điểm cục bộ (nếu AI lỗi hoặc thiếu thì dùng điểm cục bộ và hiện ghi chú "dùng điểm cục bộ"). Cache điểm AI theo sceneId + chữ ký ảnh để chạy lại không gọi AI lần nữa.
+- Parse JSON phải chịu được hàng rào markdown và văn bản thừa, kiểm tra camera nằm trong CAMERA_PRESETS (không thì bỏ).
+- Mỗi thumbnail được chọn hiện thêm lý do ngắn của AI (tooltip hoặc dòng nhỏ).
+
+2. Chiến lược camera cho các video: dropdown "Camera": "Một kiểu cố định" (như hiện tại) | "Xoay vòng" (người dùng tick nhiều kiểu trong CAMERA_PRESETS, gán lần lượt theo thứ tự cảnh để các video không lặp lại) | "AI chọn theo ảnh" (dùng trường camera do AI trả về, ảnh nào thiếu thì xoay vòng). Camera của từng cảnh hiển thị và sửa được trong danh sách cảnh đã chọn (select riêng cho mỗi cảnh, mặc định theo chiến lược). composeMotionPrompt dùng camera của chính cảnh đó khi tạo job.
+- Phong cách (style) giữ chung cho tất cả để đồng nhất, nhưng thêm tuỳ chọn "Style: xoay vòng giữa các kiểu đã tick" cho người muốn đa dạng.
+
+3. Tổng hợp: nút "Chọn tự động" ở chế độ Tự động vẫn là một thao tác: chấm điểm (cục bộ, thêm AI nếu chiến lược là AI), chọn K ảnh, gán camera theo chiến lược, rồi hiện tóm tắt "Đã chọn K/N ảnh - ước tính T credit". Người dùng sửa tay được mọi thứ trước khi bấm "Tạo video".
+
+Kiểm tra lại: build không lỗi; với vài ảnh thử chiến lược AI thì mỗi ảnh có điểm và camera hợp lệ, ảnh bị lỗi thì tự rơi về điểm cục bộ.

@@ -1,0 +1,23 @@
+Thêm BỘ ĐẾM SỬ DỤNG (usage) và tự lưu nháp. Flow SDK không có API đọc credit hoặc số ảnh đã tạo, nên bộ đếm phải do tool tự ghi lại mỗi lần tạo. Tạo file mới services/usage.ts, sửa App.tsx (và types.ts nếu cần). GIỮ NGUYÊN mọi tính năng hiện có (parser, tạo ảnh, tải về, ImageEditor). Không dùng window.confirm/alert/prompt (sandbox không có allow-modals).
+
+A. services/usage.ts (thuần logic, không React):
+- Lưu bằng localStorage, key 'flow-batch-usage-v1', MỌI lần đọc/ghi bọc try/catch (sandbox có thể chặn); nếu không ghi được thì vẫn chạy trong bộ nhớ và hàm save trả false.
+- State: { version:1, dailyImageCap:number (mặc định 1000), imageDate:'YYYY-MM-DD' (ngày theo giờ máy), imageCount, imageFailed, monthlyCreditBudget (mặc định 6000), creditBaseline (mặc định = monthlyCreditBudget), creditSpent (credit tool đã dùng kể từ lần hiệu chỉnh gần nhất), cycleResetDay (1-28, mặc định 1), cycleStartDate:'YYYY-MM-DD', log: UsageEvent[] (giữ tối đa 50 mục mới nhất; mỗi mục { ts:number, type:'image'|'image_failed'|'video', model:string, credits:number, note?:string }) }.
+- loadUsage() trả { state, persisted:boolean }, validate dữ liệu đọc ra, sai thì dùng mặc định. Tự rollover: sang ngày mới thì imageCount=0, imageFailed=0, imageDate=hôm nay; qua ngày reset chu kỳ credit (cycleResetDay) thì creditBaseline = monthlyCreditBudget, creditSpent = 0, cycleStartDate = ngày reset đó.
+- Hàm: recordImage(state, success:boolean, model:string), recordVideoCredits(state, credits:number, model:string, note?:string), calibrateCredits(state, remainingNow:number) (đặt creditBaseline = remainingNow, creditSpent = 0), resetTodayImages(state), updateSettings(state, partial). Tất cả trả state mới (immutable) và tự rollover trước khi tính.
+- Selector: imagesLeftToday(state) = max(0, dailyImageCap - imageCount); creditsLeft(state) = max(0, creditBaseline - creditSpent).
+- Bảng chi phí credit video cho gói ULTRA, export VIDEO_CREDIT_COSTS và hàm estimateVideoCredits(model, resolution, seconds, count): 'Veo 3.1 - Lite' = 5 mọi độ dài (4/6/8s, 720p); 'Veo 3.1 - Fast' = 10 mọi độ dài; 'Veo 3.1 - Quality' = 100 mọi độ dài; 'Omni 1.1 Flash' 720p: 4s=7, 6s=10, 8s=12, 10s=15; 360p: 4s=4, 6s=5, 8s=6, 10s=7. Ghi chú trong comment: nguồn là trang "Manage your Google Flow credits" của Google Flow Help, cột Ultra, lấy ngày 2026-10-29; Pro gấp đôi cho Lite/Fast; Google có thể đổi giá bất cứ lúc nào.
+
+B. Nối vào tạo ảnh (App.tsx):
+- Mỗi lần Flow.generate.image trả về thành công thì gọi recordImage(success=true). Mỗi lần ném lỗi (trừ khi bị Stop huỷ) gọi recordImage(false). Lưu state vào localStorage sau mỗi lần ghi.
+- Trước mỗi scene trong vòng lặp batch: nếu imageCount >= dailyImageCap thì DỪNG batch, giữ các scene còn lại ở pending, hiện thông báo "Đã chạm hạn mức {cap} ảnh hôm nay (do tool đếm). Tăng hạn mức trong mục Usage nếu Flow vẫn cho phép." Áp dụng cả cho nút refresh từng ảnh.
+- Trên khu vực nút Start/Launch hiện dòng "Sẽ tạo N ảnh - hôm nay còn M" và tô màu cam nếu N > M.
+
+C. Giao diện:
+- Panel phải: bọc phần giữa (Generator Settings, Batch Stats, Usage) trong vùng cuộn (flex-1 overflow-y-auto dark-scrollbar) để nút Clear Session và Launch Batch luôn hiện ở dưới.
+- Thêm thẻ "Usage" dưới Batch Stats gồm: (1) "Ảnh hôm nay: X / CAP" kèm thanh tiến trình (xanh dưới 80%, cam từ 80%, đỏ khi đạt 100%) và dòng nhỏ "Còn N ảnh - lỗi hôm nay: F"; (2) "Credit video: LEFT / BUDGET" kèm thanh tiến trình và dòng "Đã dùng qua tool: SPENT"; (3) nút "Điều chỉnh" mở khu chỉnh sửa gồm: Hạn mức ảnh/ngày, Credit/tháng, Ngày reset credit (1-28), nút "Reset đếm ảnh hôm nay", và ô nhập "Credit còn lại hiện tại trên Flow" + nút "Hiệu chỉnh" (gọi calibrateCredits); (4) dòng trạng thái lưu: "Đã lưu trên trình duyệt" hoặc cảnh báo "Không lưu được: số đếm sẽ mất khi tải lại tool"; (5) ghi chú nhỏ: "Chỉ đếm hoạt động của tool này, không gồm ảnh/video tạo trực tiếp trên Flow hay thiết bị khác. Số dư thật xem ở góc trên phải của Flow. Hạn mức ảnh/ngày do bạn tự đặt (Google không công bố)."
+- Thêm một pill nhỏ cố định ở thanh tiêu đề của vùng chính (cạnh tên tab) hiện "Ảnh X/CAP - Credit LEFT" và đổi màu theo ngưỡng như trên.
+
+D. Tự lưu nháp: lưu inputText và settings (model, aspectRatio, resolution, delaySeconds) vào localStorage key 'flow-batch-draft-v1' (try/catch, debounce 500ms) và khôi phục khi mở lại tool. Nếu model đã lưu không còn nằm trong MODELS thì dùng mặc định. Không lưu ảnh/base64.
+
+Kiểm tra lại: build không lỗi; sau khi tạo ảnh thì X tăng 1; đổi Hạn mức ảnh/ngày rồi tải lại trang thì giá trị còn nguyên (nếu localStorage hoạt động).

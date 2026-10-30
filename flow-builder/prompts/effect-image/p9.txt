@@ -1,0 +1,3 @@
+EFFECT-IMAGE — ĐỢT 9: 2 SỬA NHỎ, không sửa gì khác, không viết lại file.
+(1) services/autoPilot.ts, handleFiveConsecutiveErrors: bộ đếm nghỉ đang trừ remainingSec-- trong setInterval 1 giây. Khi tab chạy nền lâu, Chrome giãn setInterval còn khoảng 1 lần/phút nên 3 phút nghỉ có thể thành nhiều giờ. Sửa: đặt const deadline = Date.now() + 180000 trước khi tạo timer; mỗi nhịp tính remainingSec = Math.max(0, Math.ceil((deadline - Date.now()) / 1000)); khi Date.now() >= deadline thì kết thúc nghỉ và gọi autoRetryRecentFailedItems() như hiện tại. Giữ nguyên phần còn lại.
+(2) components/PlatformTest.tsx, mục "Giả lập lỗi sinh ảnh": danh sách số lần đang là 1, 2, 3, 4, 5; đổi thành 1, 2, 3, 5, 10, 20, 30.

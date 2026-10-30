@@ -1,0 +1,7 @@
+1. A cozy 2D anime bakery at dawn, warm light spilling onto a cobblestone street, a ginger cat sleeping on the windowsill
+2. An old lighthouse on a cliff during a violent storm, waves crashing, dramatic 2D illustration
+
+Một khu rừng tre xanh mướt buổi sớm, sương mù nhẹ, tia nắng xuyên qua tán lá, phong cách hoạt hình 2D vẽ tay
+
+Prompt 4: A young girl inventor in a steampunk workshop full of gears and glowing tubes, 2D cel shading --ar 9:16 --v 6 --style raw
+Negative: blurry, extra fingers

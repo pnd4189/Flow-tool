@@ -1,0 +1,13 @@
+EFFECT-IMAGE — ĐỢT 7A: SỬA LỖI KHI CHẠY KHÔNG TRỌN LƯỢT (đã chạy thật với giả lập hạn mức: 6 prompt, chỉ 1 clip xong). CHỈ sửa services/autoPilot.ts, components/AutoPilotPanel.tsx, handleManifestFilesUpload trong components/Step1PromptInput.tsx và kiểu stage trong types.ts. KHÔNG viết lại file; trong văn bản JSX không viết ">" hoặc "<" trần.
+
+(1) LỖI NGHIÊM TRỌNG: manifest tổng "{dựÁn}_manifest.json" đang dùng buildManifestJson(this.queueItems) nên ghi CẢ các prompt chưa chạy/lỗi (totalClips 6, clips 6 trong khi chỉ có 1 clip). Nạp file này vào "Chạy tiếp từ manifest" sẽ đánh dấu nhầm là đã xong và bỏ sót prompt. Sửa trong finalizePipeline: giữ mảng completedManifestItems (mỗi lần checkBatchCompletion nhận 1 mục thì thêm vào, gồm cả promptKey) và ghi manifest tổng CHỈ từ mảng này, sắp theo order: { projectName, generatedAt, resolution, fps, mode, totalClips: số mục hoàn tất, skippedClips, notCompletedOrders: [STT các mục chưa xong], stoppedByQuota?, mergedVideoFile?, clips }. Không dùng buildManifestJson ở đây nữa (giữ nguyên hàm đó cho bước 4).
+
+(2) handleManifestFilesUpload: chỉ tính là đã xong với mục có promptKey; bỏ nhánh dự phòng theo originalPrompt.
+
+(3) HẾT HẠN MỨC: thêm stage 'not_started'. Khi quota, các mục đang 'waiting' chuyển sang 'not_started' (không đặt 'error', không ghi q.error), checkAllCompleted coi 'not_started' là đã kết thúc. unstartedCount đếm stage 'not_started'. Mục lỗi thật chỉ là mục đang sinh gặp quota. retryFailedStages xử lý cả 'error' và 'not_started' (mục chưa có ảnh về 'waiting'). Trên bảng: chip xám "Chưa chạy"; bộ lọc Lỗi không tính mục này; nút trong thẻ tổng kết ghi "Chạy lại mục lỗi (E)" khi không có mục chưa chạy, và "Chạy nốt N mục" khi có.
+
+(4) Dòng trạng thái đầu bảng (estHeaderMsg) khi kết thúc: dừng vì hạn mức → "Đã dừng vì hết hạn mức"; người dùng dừng → "Bạn đã dừng"; có lỗi → "Xong, có E mục lỗi"; còn lại → "Đã hoàn tất tất cả mục". Số prompt chưa chạy lấy đúng summary.unstartedCount (kể cả khi bằng 0 thì không dùng công thức dự phòng).
+
+(5) Biểu tượng dòng "Ghép thành 1 video" trong modal Tuỳ chỉnh đang hiện thành chữ vì tên icon không có trong Material Symbols: đổi sang "movie".
+
+KIỂM TRA: 6 prompt, giả lập hạn mức 1 lần → manifest tổng chỉ có các clip đã xong và notCompletedOrders liệt kê phần còn lại; bảng hiện "Đã dừng vì hết hạn mức", "còn 4 prompt chưa chạy", nút Chạy nốt; nạp manifest đó vào "Chạy tiếp từ manifest" → chỉ các prompt thật sự xong được bỏ qua.

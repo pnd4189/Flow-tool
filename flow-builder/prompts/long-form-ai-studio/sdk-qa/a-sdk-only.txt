@@ -1,0 +1,126 @@
+
+
+Dưới đây là câu trả lời chi tiết và chính xác theo đặc tả kỹ thuật và định nghĩa TypeScript nguyên văn của flow-sdk:
+
+1) Flow.generate.video: Chi tiết các trường options & khả năng Extend
+
+Chữ ký TypeScript nguyên văn:
+
+interface VideoGenerateOptions {
+  prompt: string;
+  firstFrameImageMediaId?: string;
+  lastFrameImageMediaId?: string;
+  referenceImageMediaIds?: string[];
+  sourceVideoMediaId?: string;
+  sourceVideoMode?: 'edit';
+  audioReferenceMediaIds?: string[];
+  aspectRatio?: '16:9' | '9:16';
+  modelDisplayName: string;
+  durationSeconds?: number;
+  resolution?: '360p' | '720p';
+}
+
+Có trường nào để EXTEND một video có sẵn không?
+KHÔNG CÓ. SDK không hỗ trợ extend video (tính năng Extend chỉ có sẵn trên giao diện web chính của Google Flow khi người dùng bấm trực tiếp vào video).
+sourceVideoMode chỉ nhận duy nhất 1 giá trị là 'edit' (dùng cho Video-to-Video style transfer / editing: biến đổi video nguồn theo prompt). Không có giá trị 'extend'.
+Có các trường numberOfVideos, seed, negativePrompt, generateAudio không?
+KHÔNG CÓ. Cả 4 trường này đều không tồn tại trong interface VideoGenerateOptions của SDK.
+audioReferenceMediaIds lấy mediaId giọng nói từ đâu?
+Lấy từ Flow.media.select({ filter: 'audio' }) hoặc Flow.media.selectMultiple({ filter: 'audio' }) khi người dùng chọn file âm thanh đã tải lên gallery của họ. (Lưu ý: SDK quy định khi dùng audioReferenceMediaIds thì bắt buộc phải kèm referenceImageMediaIds hoặc sourceVideoMediaId, không được truyền âm thanh đơn lẻ).
+2) Có được truyền referenceImageMediaIds CÙNG LÚC với firstFrameImageMediaId / lastFrameImageMediaId không?
+KHÔNG ĐƯỢC PHÉP TRUYỀN CÙNG LÚC.
+Quy tắc ràng buộc cốt lõi của SDK: firstFrameImageMediaId và referenceImageMediaIds loại trừ lẫn nhau (mutually exclusive).
+Nếu truyền cả hai cùng lúc, SDK sẽ báo lỗi validation ngay lập tức.
+Vì lastFrameImageMediaId bắt buộc phải đi kèm với firstFrameImageMediaId, nên không có bất kỳ model nào (dù là Omni 1.1 Flash hay các bản Veo 3.1) cho phép kết hợp referenceImageMediaIds cùng lúc với keyframe đầu/cuối. Bạn phải chọn 1 trong 2: hoặc chế độ Keyframe (I2V / Interpolation) hoặc chế độ Tham chiếu phong cách (R2V).
+3) Flow.generate.image: Giới hạn reference & Chế độ chỉnh sửa ảnh
+
+Chữ ký TypeScript nguyên văn:
+
+interface ImageGenerateOptions {
+  prompt: string;
+  referenceImageMediaIds?: string[];
+  aspectRatio?: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
+  modelDisplayName: string;
+}
+
+referenceImageMediaIds tối đa bao nhiêu ảnh?
+Đối với các model hiện hành (🍌 Nano Banana Pro, 🍌 Nano Banana 2.1, 🍌 Nano Banana 2 Lite):
+Chế độ R2I (Text Prompt + References): Tối đa 10 image references.
+Chế độ I2I (1 Base Image + References): Tối đa 1 Base Image + 9 image references (tổng cộng 10 ảnh).
+Có chế độ "chỉnh sửa ảnh" (truyền 1 ảnh gốc + prompt mô tả thay đổi) không?
+CÓ. Model tự động nhận diện chế độ Image-to-Image / Style editing khi bạn truyền mediaId của ảnh gốc vào mảng referenceImageMediaIds: [gocMediaId] kèm prompt mô tả thay đổi (ví dụ: "Transform into anime style" hoặc "Change outfit to red jacket"). Không có trường riêng tên là baseImageMediaId trong options; ảnh đưa vào referenceImageMediaIds sẽ đóng vai trò làm gốc để biến đổi.
+4) Flow.upload: Chữ ký, giới hạn & hành vi
+
+Chữ ký TypeScript nguyên văn:
+
+Flow.upload(options: {
+  base64: string;
+  mimeType: 'image/png' | 'image/jpeg' | 'video/mp4';
+  name?: string;
+}): Promise<{ mediaId: string }>
+
+Giới hạn dung lượng: SDK không nêu con số MB cố định trong tài liệu (không chắc giới hạn byte cụ thể ở tầng host, phụ thuộc bộ nhớ trình duyệt xử lý chuỗi base64), nhưng chỉ hỗ trợ 3 định dạng: image/png, image/jpeg, video/mp4 (không hỗ trợ audio).
+Có tốn credit không?
+KHÔNG. Flow.upload chỉ là thao tác đẩy dữ liệu byte từ client lên Media Gallery để lấy mediaId, hoàn toàn miễn phí (0 credit).
+Ảnh upload có hiện trong thư viện dự án không?
+CÓ. Ảnh/video sau khi upload sẽ được lưu vào Media Gallery của dự án và trả về mediaId để dùng cho các bước xử lý/sinh tiếp theo.
+5) Flow.generate.text: Giới hạn ảnh, kích thước prompt & credit
+
+Chữ ký TypeScript nguyên văn:
+
+Flow.generate.text(
+  prompt: string,
+  options?: {
+    systemInstruction?: string;
+    thinkingLevel?: 'high' | 'medium' | 'low';
+    images?: Array<{ base64: string; mimeType?: string }>;
+    videos?: Array<{ base64: string; mimeType?: string; fps?: number }>;
+    audios?: Array<{ base64: string; mimeType?: string }>;
+  }
+): Promise<{ text: string }>
+
+Tối đa bao nhiêu ảnh trong options.images một lần gọi?
+Trong tài liệu SDK không công bố con số giới hạn cứng (ghi nhận: không chắc số lượng tối đa cụ thể, hoạt động theo context window của Gemini multimodal, thực tế gửi 1–10 ảnh đều hoạt động ổn định).
+Giới hạn kích thước prompt:
+Không chắc giới hạn ký tự cụ thể; kế thừa từ context window của Gemini (hàng chục nghìn tokens).
+Có tốn credit không?
+KHÔNG. Flow.generate.text hiện tại không tính credit (0 credit) trong Flow Tool runtime.
+6) Các API quản lý Media Gallery & Scenebuilder
+Đặt tên / đổi tên media đã tạo:
+Chỉ có thể đặt tên lúc lưu hoặc upload thông qua trường name trong Flow.save({ name: '...' }) hoặc Flow.upload({ name: '...' }).
+KHÔNG CÓ API đổi tên (rename) media đã tồn tại.
+Thêm clip vào Scenebuilder của Flow:
+KHÔNG CÓ. Tool chạy trong sandbox cô lập hoàn toàn, không có method SDK nào để tương tác hay chèn clip vào Scenebuilder của giao diện Flow.
+Đọc danh sách media trong dự án (không qua hộp chọn):
+KHÔNG CÓ. Bắt buộc phải thông qua hộp thoại chọn của người dùng bằng Flow.media.select() hoặc Flow.media.selectMultiple(). Tool không thể tự ý quét hay đọc danh sách media trong thư viện.
+Xoá media:
+KHÔNG CÓ. SDK không cung cấp bất kỳ API nào để xoá media khỏi thư viện dự án.
+7) Flow.media.select / selectMultiple: Giá trị trả về
+
+Chữ ký TypeScript nguyên văn:
+
+interface MediaItem {
+  mediaId: string;
+  base64: string;
+  mimeType: string;
+  type: 'image' | 'video' | 'audio';
+  name: string;
+}
+
+// Chữ ký hàm:
+Flow.media.select(options?: { id?: string; filter?: 'image' | 'video' | 'audio' | 'all' }): Promise<MediaItem>;
+Flow.media.selectMultiple(options?: { maxCount?: number; filter?: 'image' | 'video' | 'audio' | 'all' }): Promise<MediaItem[]>;
+
+Các trường trả về: Gồm 5 trường: mediaId, base64, mimeType, type, và name.
+Ảnh trả về có kèm mediaId để dùng lại làm firstFrame / reference không?
+CÓ. Trường mediaId được trả về đầy đủ và có thể truyền trực tiếp vào firstFrameImageMediaId, lastFrameImageMediaId hoặc referenceImageMediaIds.
+8) Sự kiện / Callback lưu dữ liệu khi đóng tool hoặc tải lại trang
+KHÔNG CÓ.
+Flow SDK không cung cấp bất kỳ lifecycle event hay hook nào cho việc đóng tool.
+Vì Tool chạy trong iframe sandboxed với origin đặc biệt (opaque origin), localStorage / sessionStorage không bền vững giữa các phiên làm việc (bị xóa sạch khi reload/đóng).
+Trình duyệt tiêu chuẩn có sự kiện window.addEventListener('beforeunload', ...), tuy nhiên bên trong sandboxed iframe của host, các tác vụ bất đồng bộ phức tạp (như gọi Flow.download() hay gửi dữ liệu ra ngoài) khi người dùng đóng tab không được đảm bảo chạy thành công.
+Cách làm chuẩn trong Flow Tool: Cung cấp nút cho người dùng chủ động xuất file session JSON thông qua Flow.download() (như kiến trúc SessionCard hiện tại trong app).
+thumb_up
+thumb_down
+content_copy
+flag
