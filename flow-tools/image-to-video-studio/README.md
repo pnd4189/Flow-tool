@@ -6,7 +6,7 @@ Flow Tool, id `88a10ec3-c82f-40ee-a0e3-4daa8d43bfe8`, dự án "Youtube studio".
 
 Sinh ảnh hàng loạt từ kịch bản hoặc danh sách prompt, xem lại, sinh lại, chỉnh sửa, tải về; tab Video Studio biến ảnh thành video (tốn credit).
 
-## Thành phần (`tool-snapshots/image-to-video-studio/source`)
+## Thành phần (`flow-tools/image-to-video-studio/source`)
 
 | File | Việc |
 |---|---|
@@ -29,7 +29,7 @@ Sinh ảnh hàng loạt từ kịch bản hoặc danh sách prompt, xem lại, s
 
 Veo; 720p; clip 8/10 s; 9:16 kèm cắt + `Flow.upload`; nhiều biến thể mỗi ảnh.
 
-## Prompt đã dùng (`flow-builder/prompts/image-to-video-studio/`)
+## Prompt đã dùng (`flow-tools/image-to-video-studio/prompts/`)
 
 | File | Nội dung |
 |---|---|

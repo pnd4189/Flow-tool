@@ -1,4 +1,4 @@
-// Policy-block helpers of Image to Video Studio. Run through flow-builder/scripts/check-snapshot.sh.
+// Policy-block helpers of Image to Video Studio. Run through flow-tools/_shared/scripts/check-snapshot.sh.
 import assert from 'node:assert/strict';
 import { buildImagePrompt, isPolicyBlockError, rewritePromptForPolicy, sanitizeNegative } from '../source/services/safety';
 
