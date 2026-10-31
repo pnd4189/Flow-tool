@@ -1,4 +1,4 @@
-// Script-import regressions of Long-Form AI Studio. Run through flow-builder/scripts/check-snapshot.sh.
+// Script-import regressions of Long-Form AI Studio. Run through flow-tools/_shared/scripts/check-snapshot.sh.
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';

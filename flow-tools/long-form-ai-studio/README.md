@@ -10,7 +10,7 @@ Dựng phim hoạt hình 2D dài (4–5 phút) hoặc Short dọc từ nhiều c
 
 Header + 6 bước (Nhân vật, Kịch bản, Đạo diễn, Storyboard, Render, Xuất) + dòng thời gian cảnh ở dưới (bấm biểu tượng xích/kéo giữa 2 cảnh để nối liền hay cắt cảnh).
 
-## Thành phần chính (`tool-snapshots/long-form-ai-studio/source`)
+## Thành phần chính (`flow-tools/long-form-ai-studio/source`)
 
 | File | Việc |
 |---|---|
@@ -38,7 +38,7 @@ Header + 6 bước (Nhân vật, Kịch bản, Đạo diễn, Storyboard, Render
 
 Các model Veo; 720p và clip 8–10 s; Short 9:16; tạo bảng nhân vật từ Character Vault ở v2; chất lượng lời đọc tiếng Việt; đợt sửa cuối p7 (thống nhất `projectSlug`, bỏ qua take không có file khi tải, hiệu chỉnh điểm chấm) đã có trong code nhưng chưa chạy lại.
 
-## Prompt đã dùng (`flow-builder/prompts/long-form-ai-studio/`)
+## Prompt đã dùng (`flow-tools/long-form-ai-studio/prompts/`)
 
 | File | Nội dung |
 |---|---|
@@ -78,7 +78,7 @@ Render video thật đã chạy ở mục dưới. Còn chưa gặp thật: time
   - Thoại không còn gắn nhầm sang shot của cảnh trước, hai câu thoại liên tiếp không còn ghi đè nhau.
   - Dòng nhãn ("Camera: slow push in") gắn vào shot đang có thay vì tạo shot riêng. Cảnh chỉ toàn nhãn vẫn tạo được 1 shot.
 - **File chỉ có một khối `--- SCENE 001 ---`** từng báo "Không tìm thấy shot nào". Đây là lỗi do bản `p9` gây ra, lộ ra khi chạy thật; đã sửa, giờ ra 1 shot.
-- **Bài kiểm tra:** `test-scripts/script-import.test.ts`, chạy bằng `flow-builder/scripts/check-snapshot.sh`. Có thêm file KTT_T04 đủ 120 shot khi ổ Drive có gắn.
+- **Bài kiểm tra:** `test-scripts/script-import.test.ts`, chạy bằng `flow-tools/_shared/scripts/check-snapshot.sh`. Có thêm file KTT_T04 đủ 120 shot khi ổ Drive có gắn.
 - **Render thật (tốn 4 credit, user đồng ý):**
   - Nạp 1 khối → 1 shot. Tạo 2/2 keyframe (0 credit). Đặt Omni 1.1 Flash 360p 4 s; nút ghi "Quay (4 cr)".
   - Take #1 xong sau ~41 s. AI chấm 75 điểm. Bộ đếm ngân sách 6.000 → 5.996.
