@@ -1,6 +1,6 @@
 // Browser probe (needs real Image decoding and blob URLs): run in an about:blank Chrome tab.
 // Bundle: esbuild <this file> --bundle --format=iife --global-name=EffectImageParallaxProbe
-//   --alias:flow-sdk=flow-builder/scripts/flow-sdk-stub.js --alias:mp4-muxer=flow-builder/scripts/mp4-muxer-stub.js
+//   --alias:flow-sdk=flow-tools/_shared/scripts/flow-sdk-stub.js --alias:mp4-muxer=flow-tools/_shared/scripts/mp4-muxer-stub.js
 // then eval: await EffectImageParallaxProbe.runParallaxAssetChecks()
 import { prepareRenderAssets } from '../source/services/exportService';
 import { renderFrame } from '../source/services/motionEngine';

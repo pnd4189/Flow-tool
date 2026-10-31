@@ -4,7 +4,7 @@
 # since the stamp. Needs the Flow tab visible. For a hidden tab use watch-downloads.sh instead.
 # Exit: 0 finished, 2 timeout (20 min), 3 guard failed, 4 quota stop.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$HERE/../../../flow-builder/scripts/common.sh"
+source "$HERE/../../../flow-tools/_shared/scripts/common.sh"
 prev=""
 for i in $(seq 1 120); do
   sleep 10

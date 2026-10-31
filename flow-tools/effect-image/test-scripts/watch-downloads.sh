@@ -5,7 +5,7 @@
 # Prints every change; stops when "<project>_manifest.json" appears (the last file a run writes) or after 25 min.
 # Exit: 0 manifest seen, 2 timeout.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$HERE/../../../flow-builder/scripts/common.sh"
+source "$HERE/../../../flow-tools/_shared/scripts/common.sh"
 P="$1"; t0=$(date +%s); prev=-1; n=0
 for i in $(seq 1 100); do
   sleep 15

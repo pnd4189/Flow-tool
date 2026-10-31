@@ -56,11 +56,11 @@ Lượt chạy 300 prompt (dài nhất mới 30); Flow có giới hạn ảnh m�
 - Mỗi lượt nên đặt "Tên dự án" khác nhau (trùng tên thì Chrome thêm " (1)").
 - Lần đầu chạy file thật nên là 50–100 prompt.
 
-## Cấu trúc code (`tool-snapshots/effect-image/source`)
+## Cấu trúc code (`flow-tools/effect-image/source`)
 
 `types.ts`; `App.tsx` (ghép bố cục + state); `services/`: `promptParser`, `genQueue`, `effectDirector`, `layerService`, `motionEngine`, `overlays`, `exportService`, `downloadQueue`, `autoPilot` (đường ống dây chuyền, ước tính, lô, phục hồi), `chromaKey`, `mp4Encoder`, `platformTest`; `components/`: `Step1PromptInput`, `Step2ImageGen`, `Step3Effects`, `Step4Export`, `PreviewPlayer`, `AutoPilotPanel`, `VirtualList`, `PlatformTest`, `ui/*`.
 
-## Prompt đã dùng để build (`flow-builder/prompts/effect-image/`)
+## Prompt đã dùng để build (`flow-tools/effect-image/prompts/`)
 
 | File | Nội dung |
 |---|---|
@@ -80,6 +80,6 @@ Dữ liệu thử: `test-data/prompts300.txt` (300 prompt dạng "N. nội dung"
 
 - Tách prompt: file dạng `--- SCENE 001 ---` + các đoạn `Camera:`/`Subject:`… cách nhau dòng trống bị tách thành 1200 prompt thay vì 120. Giờ dòng tiêu đề đứng riêng, lặp lại từ 2 lần, sở hữu mọi đoạn bên dưới. Đã kiểm trên tool thật với `KTT_T04_ban-ngan_vi_image_prompts.txt`: báo 120 prompt. `prompts300.txt` vẫn 300, `test_prompts.txt` vẫn 4.
 - Dòng tiêu đề tài liệu ("# My prompts") đứng một mình không còn thành 1 prompt thừa (`p11-heading-only-title`). Nếu mọi khối đều chỉ có tiêu đề thì vẫn dùng tiêu đề làm prompt như cũ.
-- Bài kiểm tra `test-scripts/prompt-parser.test.ts` đếm prompt trên các file mẫu ở `test-data/`, và file KTT_T04 120 cảnh khi ổ Drive có gắn. Chạy bằng `flow-builder/scripts/check-snapshot.sh tool-snapshots/effect-image`. 18 lỗi kiểu có sẵn từ trước (ví dụ `Math.imMath` trong `overlays.ts`, thiếu kiểu `mp4-muxer`) ghi ở `test-scripts/tsc-known-errors.txt`; chỉ lỗi mới làm trượt.
+- Bài kiểm tra `test-scripts/prompt-parser.test.ts` đếm prompt trên các file mẫu ở `test-data/`, và file KTT_T04 120 cảnh khi ổ Drive có gắn. Chạy bằng `flow-tools/_shared/scripts/check-snapshot.sh flow-tools/effect-image`. 18 lỗi kiểu có sẵn từ trước (ví dụ `Math.imMath` trong `overlays.ts`, thiếu kiểu `mp4-muxer`) ghi ở `test-scripts/tsc-known-errors.txt`; chỉ lỗi mới làm trượt.
 - **Parallax chưa từng vào video xuất (sửa `p12`):** layerService chỉ trả `bgBlobUrl`/`subjectCutoutBlobUrl`, còn exportService và PreviewPlayer đòi `subjectCutoutDataUrl`/`subjectCutoutBase64`, hai trường không bao giờ được gán. Vì vậy MP4 và bản xem trước luôn ra ảnh phẳng dù bước 3 báo lớp "sẵn sàng". Lỗi lộ ra nhờ kiểm tra kiểu (tsc báo `bgBase64` không có trong kiểu); `test-scripts/parallax-assets-browser-probe.js` chứng minh trước và sau khi sửa (4/4). Cùng đợt sửa `Math.imMath` → Mulberry32 chuẩn, nên hiệu ứng phủ cùng seed sẽ khác lần dựng trước. Effect-Image giờ 0 lỗi kiểu. Chưa xuất MP4 có parallax thật trên Flow.
 - Chính sách: lọc mục nhạy cảm khỏi negative trước khi nối `Avoid:`; AI viết lại prompt tối đa 2 lần (cả Bước 2 và chế độ tự động) rồi mới báo lỗi. Đã chạy thật 10 cảnh đầu KTT_T04 kèm nguyên dòng Negative: 10/10 ảnh xong; vài cảnh bị Flow chặn và được AI viết lại prompt rồi tạo thành công (nhãn "AI đã chỉnh prompt").
