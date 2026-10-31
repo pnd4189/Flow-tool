@@ -11,6 +11,7 @@ import type {
   ExportManifestItem,
   MemoryStats,
   CameraMoveType,
+  GeneratedImageVariant,
 } from '../types';
 import {
   constructSentPrompt,
@@ -929,7 +930,7 @@ export class AutoPilotPipeline {
           this.activeObjectUrls.add(blobUrl);
           const thumb = await createResizedThumbnail(genResult.base64, genResult.mimeType || 'image/jpeg', 512);
 
-          const newVariant = {
+          const newVariant: GeneratedImageVariant = {
             id: `var_auto_${Date.now()}`,
             blobUrl,
             thumbnailUrl: thumb.dataUrl,

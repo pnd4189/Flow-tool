@@ -1,2 +1,0 @@
-source/services/image.ts: TS2307: Cannot find module 'pica' or its corresponding type declarations.
-source/services/video.ts: TS2345: Argument of type 'Uint8Array<ArrayBufferLike>[]' is not assignable to parameter of type 'BlobPart[]'.

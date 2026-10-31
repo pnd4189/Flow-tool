@@ -82,16 +82,12 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
       if (
         parallaxLayers &&
         parallaxLayers.status === 'ready' &&
-        (parallaxLayers.bgBlobUrl || parallaxLayers.bgBase64) &&
-        (parallaxLayers.subjectCutoutDataUrl || parallaxLayers.subjectCutoutBase64)
+        parallaxLayers.bgBlobUrl &&
+        (parallaxLayers.subjectCutoutBlobUrl || parallaxLayers.subjectCutoutDataUrl)
       ) {
         try {
-          const bgSrc =
-            parallaxLayers.bgBlobUrl ||
-            `data:image/jpeg;base64,${parallaxLayers.bgBase64}`;
-          const subSrc =
-            parallaxLayers.subjectCutoutDataUrl ||
-            `data:image/png;base64,${parallaxLayers.subjectCutoutBase64}`;
+          const bgSrc = parallaxLayers.bgBlobUrl;
+          const subSrc = parallaxLayers.subjectCutoutBlobUrl || parallaxLayers.subjectCutoutDataUrl!;
 
           const [bgImg, subImg] = await Promise.all([
             loadImageElement(bgSrc),

@@ -77,7 +77,16 @@ Mở tab tool trước bằng `agent-browser --auto-connect --pin-tab open <URL>
    - Retouch: tự khoanh người nhiều điểm; gọn mặt an toàn với nhiều mặt; nhớ mốc nhận diện; thon thân dùng mặt nạ người.
    - Effect-Image: bỏ tiêu đề tài liệu khỏi danh sách prompt.
    - Có `verify-build.sh`/`check-snapshot.sh` và `test-scripts/*.test.ts` cho 3 tool.
-   - Còn chưa kiểm: Retouch với tranh 2D (có sẵn `tool-snapshots/retouch-studio/test-data/illustration.png`) và mặt nghiêng mạnh; Long-Form timeout 900 s và AI viết lại prompt video khi bị chặn.
+   - Đêm 2026-10-31:
+     - Sửa parallax không vào video xuất (Effect-Image).
+     - Sửa chú thích nút (Image to Video).
+     - Gọn mặt mượt trên tranh 2D, không chạm vai (Retouch).
+     - Cả 4 tool 0 lỗi kiểu.
+     - Nhánh lỗi render Long-Form kiểm bằng Flow giả lập.
+   - Còn chưa kiểm hoặc chưa làm:
+     - Long-Form timeout 900 s chạy thật.
+     - MP4 có parallax xuất thật trên Flow.
+     - Mặt tròn hoạt hình không vẽ miệng còn hơi phình quai hàm (xem `docs/tool-retouch-studio.md`).
 
 ## 6. Dọn dẹp
 

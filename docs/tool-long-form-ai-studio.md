@@ -84,3 +84,4 @@ Render video thật đã chạy ở mục dưới. Còn chưa gặp thật: time
   - Take #1 xong sau ~41 s. AI chấm 75 điểm. Bộ đếm ngân sách 6.000 → 5.996.
   - "Tải tất cả clip" ra `long_form_ai_studio_001_…_t1.mp4`: h264 640×360, 24 fps, có AAC, 4,03 s, 1,6 MB. Nội dung đúng kịch bản (cáo 2D quay tay quay, máy bay giấy bay lên).
   - Ảnh và video thử đã chuyển vào Thùng rác của Flow.
+- **Nhánh lỗi của render** (bị chặn → AI viết lại prompt 1 lần → thử lại; chặn lần 2 → báo lỗi rõ; hết credit → `QUOTA_ERROR`, không thử lại) đã kiểm bằng `test-scripts/render-take.test.ts` với Flow giả lập. Chỉ còn timeout 900 s là chưa chạy, vì phải chờ 15 phút thật.

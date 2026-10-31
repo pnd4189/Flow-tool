@@ -47,3 +47,9 @@ Veo; 720p; clip 8/10 s; 9:16 kèm cắt + `Flow.upload`; nhiều biến thể m�
 - Nguyên nhân đo thật: Flow trả "Lượt tạo này có thể vi phạm các chính sách của chúng tôi…", tool cũ không nhận ra câu tiếng Việt này. Tool còn nối nguyên dòng `Negative:` ("no nudity…, no graphic gore or blood…, no celebrity face…") thành `Avoid:` vào prompt. Lô 8 cảnh của KTT_T04 lỗi 4 cảnh; bỏ `Avoid:` thì cả 5 cảnh nghi bị chặn đều tạo được. Thử lại hay đổi model đều gửi y nguyên prompt nên vẫn bị chặn.
 - Cách sửa (`services/safety.ts`): lọc bỏ mục nhạy cảm khỏi negative; nếu vẫn bị chặn thì lần lượt thử bỏ hẳn `Avoid:`, rồi AI viết lại prompt (tối đa 2 lần, lần 2 dè dặt hơn), sau đó mới báo lỗi. Thẻ ảnh có nhãn "AI đã chỉnh prompt" và nút "Khôi phục prompt gốc". Retry/tạo lại dùng prompt mới nhất trong state.
 - Đã chạy thật: 16 cảnh đầu KTT_T04 kèm nguyên dòng Negative → 16/16 thành công; cảnh 014 qua ở bước bỏ `Avoid:`. Bước AI viết lại chưa được kích hoạt thật (prompt thử nặng tay vẫn không bị chặn), mới kiểm bằng đọc code.
+
+## Sửa nhỏ 2026-10-31 tối (`prompt-f2-pill-title`)
+
+- Nút `PillButton` không nhận `title`, nên chú thích "Đang tải ở Trung tâm tải xuống" trên nút Download không bao giờ hiện. Đã thêm prop `title`.
+- `services/video.ts` sửa kiểu `BlobPart[]`. Tool giờ 0 lỗi kiểu.
+- `test-scripts/safety.test.ts` kiểm các hàm an toàn (nhận lỗi chặn tiếng Việt, lọc negative KTT, thang thử lại, AI viết lại prompt) với Flow giả lập. Bước AI viết lại prompt khi bị chặn thật trên Flow vẫn chưa gặp.

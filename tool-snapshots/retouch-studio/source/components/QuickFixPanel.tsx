@@ -107,6 +107,16 @@ export const QuickFixPanel: React.FC<QuickFixPanelProps> = ({
         if (typeof face.mouthLeftX === 'number' || typeof face.mouthRightX === 'number') {
           hasMouthDetected = true;
         }
+
+        const mouthInfo =
+          typeof face.mouthLeftX === 'number' && typeof face.mouthRightX === 'number'
+            ? `, khoé miệng ${Math.round(face.mouthLeftX)}–${Math.round(face.mouthRightX)}`
+            : '';
+        onLogDiagnostic(
+          'info',
+          `Mốc mặt ${i + 1}: mũi x=${Math.round(face.noseX)}, má ${Math.round(face.leftX)}–${Math.round(face.rightX)}, mắt y=${Math.round(face.eyeY)}, cằm y=${Math.round(face.chinY)}${mouthInfo}`
+        );
+
         onLogDiagnostic('info', `Đang nắn gọn má/hàm mặt ${i + 1}/${facesToProcess.length}...`);
         const otherFaces = contours.filter((c) => c !== face);
         const res = applyFaceSlim(currentCanvas, face, faceSlimStrength, otherFaces);

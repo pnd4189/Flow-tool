@@ -244,7 +244,7 @@ export function base64ToBlob(base64Data: string, mimeType: string = 'video/mp4')
   const binaryString = atob(cleanBase64);
   const len = binaryString.length;
   const chunkSize = 32768; // 32KB chunk
-  const chunks: Uint8Array[] = [];
+  const chunks: BlobPart[] = [];
 
   for (let offset = 0; offset < len; offset += chunkSize) {
     const end = Math.min(offset + chunkSize, len);

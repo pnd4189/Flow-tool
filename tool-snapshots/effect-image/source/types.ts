@@ -397,6 +397,7 @@ export interface AutoPilotConfig {
   styleSuffix: string;
   addNoWatermark: boolean;
   translateVietnamese: boolean;
+  autoFallbackModel?: boolean;
 }
 
 export interface AutoPilotSummary {

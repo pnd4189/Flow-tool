@@ -33,3 +33,8 @@
 - Node kept running after the parser tests: the parser yields through MessageChannel and open ports hold the event loop. Tests exit explicitly and the runner has a timeout.
 - The first live Long-Form render: Omni 360p 4 s, 4 credits, ~41 s, QC 75. The button label carries the cost, so the script checked for "Quay (4 cr)" before clicking.
 - The Flow library search indexes full prompts, not just titles. That made it safe to find the SCENE 900 image by words that only its prompt contains.
+
+## Night: the type errors were hiding a real bug
+- Tightening the tsc stubs (typed `React.FC`, `React.memo`, JSX children, module stubs) cut the "known" errors from 20 to 0 real ones. Among them, `bgBase64`/`subjectCutoutBase64` "not on ParallaxLayerData" was the visible end of a real bug: export and preview read cutout fields that layerService never sets, so parallax never reached an MP4. Treat a recorded type error as a lead, not noise.
+- Face slim on 2D art: a peaked displacement profile pinches wherever the true contour meets the AI's F. A smooth plateau profile and a jaw-weighted vertical ramp fixed the S-shape. A convexity metric ("the width drop per 8 rows may only grow") is what made the probe discriminate; a monotonic-width check passed the broken version.
+- Several probe checks first passed vacuously (flat colours, a shape fully inside the warp band). Every new check was run against the old code first to see it fail.

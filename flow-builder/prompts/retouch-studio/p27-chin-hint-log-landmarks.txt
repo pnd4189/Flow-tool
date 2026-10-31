@@ -1,0 +1,10 @@
+SỬA NHỎ. CHỈ sửa services/faceSlimService.ts (chuỗi prompt trong detectFaceContours) và components/QuickFixPanel.tsx (handleFaceSlim). KHÔNG đổi gì khác, KHÔNG xoá chú thích.
+
+Đo được trên tranh hoạt hình không vẽ miệng: AI đặt chinY quá cao (khoảng ngang hàm thay vì đáy cằm) nên quai hàm bên dưới không được nắn, má gọn mà hàm giữ nguyên (viền hình chữ S).
+
+1. faceSlimService.ts, trong prompt của detectFaceContours, thay mô tả 2 dòng:
+   - chinY: "điểm thấp nhất của hình khuôn mặt (đáy cằm, ngay trên cổ). Với tranh vẽ/hoạt hình không vẽ miệng hoặc cằm, vẫn lấy đáy của hình khuôn mặt, không lấy ngang hàm."
+   - leftX/rightX: thêm "Nếu không vẽ miệng, lấy ngang khoảng 2/3 đường từ mắt xuống đáy cằm."
+2. QuickFixPanel.tsx handleFaceSlim: trước khi nắn mỗi mặt, ghi onLogDiagnostic('info', `Mốc mặt ${i + 1}: mũi x=${Math.round(face.noseX)}, má ${Math.round(face.leftX)}–${Math.round(face.rightX)}, mắt y=${Math.round(face.eyeY)}, cằm y=${Math.round(face.chinY)}` + (khoé miệng nếu có)).
+
+KIỂM TRA: build không lỗi; Gọn mặt chạy như cũ; log chẩn đoán có dòng "Mốc mặt 1: …".

@@ -115,3 +115,27 @@ Thanh phần trăm là cường độ nắn ảnh, không phải phép đo vòng
   - Tâm người lệch 1,5 px so với ảnh gốc, cách cũ lệch 7,5 px.
   - Mặt 0 px đổi.
 - **Bài kiểm tra:** probe Chrome 15/15; `request-router.test.ts` chạy bằng `check-snapshot.sh`.
+
+## Gọn mặt trên tranh 2D — 2026-10-31 đêm (`p26`, `p27`)
+
+- **Lỗi trên tranh 2D:**
+  - Mặt tròn hoạt hình bị lõm khấc ở má và vai áo bị kéo méo.
+  - Nguyên nhân thứ nhất: lượng nắn cũ hình chóp, mạnh nhất đúng tại mép má AI đo (`d = F`). Hàng nào viền thật trùng F thì bị kéo nhiều nhất, viền thành hình chữ S.
+  - Nguyên nhân thứ hai: dải dọc kéo tới cằm+0.35D nên trúng vai khi cổ ngắn.
+- **Thuật toán mới (`p26`):**
+  - Lượng nắn trơn `srcD = d + A·P(d)`, với `P = smoothstep(Cc, 0.9F, d)·(1 − smoothstep(b, c, d))` và `c = 1.8F`, thu ngắn khi có mặt người bên cạnh.
+  - Mạnh nhất ở quai hàm: `vy` tăng từ mắt+0.12D tới cằm−0.3D, tắt hẳn ở cằm+0.05D.
+  - Mặt người bên cạnh vẫn 0 px; không đủ chỗ (`c < 1.2F`) thì bỏ qua cả mặt.
+- **`p27`:** dặn AI đặt cằm ở đáy hình mặt kể cả khi tranh không vẽ miệng. Log chẩn đoán ghi "Mốc mặt N: …" để thấy AI đo sai chỗ nào. Trên tranh hoạt hình, cằm AI đặt từ quá cao thành y=546 (thật 545).
+- **Bài kiểm tra Chrome (17/17):** thêm "viền mặt tròn phải lồi đều" và "dưới cằm không đổi". Cả hai trượt với thuật toán cũ, đạt với thuật toán mới.
+- **Đã kiểm thật trên Flow:**
+
+  | Ảnh | Kết quả |
+  |---|---|
+  | Ảnh của user | 26.388 px viền, môi/mũi/mắt 0 px đổi |
+  | Ảnh ghép 2 người cách nhau | người bên cạnh 0 px đổi |
+  | Tranh KTT "Man explaining occult phenomenon" (3 mặt, 1 mặt gần quay nghiêng hẳn), chế độ "Mặt lớn nhất" | chỉ mặt giữa đổi |
+  | Cùng tranh, chế độ "Tất cả mặt" | cả 3 gọn tự nhiên |
+  | Tranh hoạt hình | hết khấc, vai 0 px đổi |
+
+- **Giới hạn còn lại:** mặt tròn hoạt hình không vẽ miệng vẫn hơi phình ở quai hàm sát cằm. Ở đó viền mặt nằm sát vùng lõi 0.65F được bảo vệ, nên ít được nắn. Thu hẹp lõi dưới môi (đã thử bằng numpy) không đổi được kết quả. Muốn khắc phục phải ước lượng độ thon của mặt theo từng hàng; chưa làm.

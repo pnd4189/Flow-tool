@@ -219,6 +219,43 @@ export function runBodyReshapeChecks() {
     assert(changed > 0 && changed === faceResult.changedPixelCount, `Changed ${changed} vs ${faceResult.changedPixelCount}`);
   });
 
+  // A round (cartoon) face whose landmarks put the cheek edge F inside the widest row, as the AI does
+  // when it measures at mouth level: the slimmed contour must stay smooth (no pinch where the true
+  // edge crosses F) and nothing below the chin (neck, shoulders) may move.
+  const round = canvas(faceW, faceH, 'white');
+  const roundContext = round.getContext('2d');
+  roundContext.fillStyle = 'black';
+  roundContext.beginPath();
+  roundContext.arc(200, 200, 120, 0, Math.PI * 2);
+  roundContext.fill();
+  roundContext.fillRect(100, 330, 200, 70);
+  const roundOriginal = pixels(round).slice();
+  const roundFace = { noseX: 200, leftX: 110, rightX: 290, eyeY: 170, chinY: 320, width: 180, height: 150 };
+  const roundOut = pixels(applyFaceSlim(round, roundFace, 12).outputCanvas);
+  check('face slim keeps a round contour convex (no pinched cheek above a wide jaw)', () => {
+    // Below its widest row a convex face narrows ever faster: the width drop over 8 rows may only grow.
+    // The old peaked profile pinched the rows whose edge sat at F, giving an S-shaped contour.
+    const widths = [];
+    for (let y = 200; y <= 312; y++) widths.push(darkWidthAt(roundOut, faceW, y));
+    let worst = 0;
+    for (let i = 0; i + 16 < widths.length; i++) {
+      const dropNow = widths[i] - widths[i + 8];
+      const dropNext = widths[i + 8] - widths[i + 16];
+      worst = Math.max(worst, dropNow - dropNext);
+    }
+    assert(worst <= 5, `contour bends back by ${worst} px (S-shaped cheek)`);
+    assert(darkWidthAt(roundOut, faceW, 260) < darkWidthAt(roundOriginal, faceW, 260) - 6, 'face did not narrow');
+  });
+  check('face slim leaves everything below the chin untouched', () => {
+    const lastRow = Math.ceil(320 + 0.05 * 150);
+    for (let y = lastRow + 1; y < faceH; y++) {
+      for (let x = 0; x < faceW; x++) {
+        const index = (y * faceW + x) * 4;
+        assert(roundOut[index] === roundOriginal[index], `Row ${y} below the chin changed at x=${x}`);
+      }
+    }
+  });
+
   // Two faces side by side. The neighbour's head (face plus an ear/hair margin of 20% of its face
   // width, which the AI landmarks exclude) carries a horizontal ramp so any stretch is visible.
   const target = { noseX: 125, leftX: 60, rightX: 190, eyeY: 160, chinY: 340, width: 130, height: 180 };

@@ -1,0 +1,19 @@
+SỬA THUẬT TOÁN "Gọn mặt" trong services/faceSlimService.ts (hàm applyFaceSlim). CHỈ sửa hàm này và chú thích của nó. KHÔNG đổi chữ ký hàm, kiểu FaceSlimResult, detectFaceContours, file khác.
+
+Lỗi đo được trên tranh 2D (mặt tròn hoạt hình): má bị lõm khấc ngay dưới tóc và vai áo bị kéo méo. Nguyên nhân: lượng nắn hiện là hình chóp (nén [Cc,F] rồi giãn [F,F+M]) nên đỉnh dịch chuyển nằm đúng tại d = F; hàng nào viền mặt thật trùng F thì bị kéo vào nhiều nhất → khấc. Dải dọc kéo tới C + 0.35D nên trúng vai khi cổ ngắn. Đã thử bằng numpy trên tranh 2D và ảnh thật: công thức dưới đây cho viền mượt, vai 0 px đổi, ảnh thật gọn tương đương bản cũ, mắt/mũi/miệng 0 px đổi.
+
+Giữ nguyên: cx, E, C, D, F_left/F_right, Cc (lõi theo khoé miệng, sàn 0.65F, trần 0.8F), pixel lõi d <= Cc chép nguyên, đếm coreCount/coreChanged/changedPixelCount, nội suy ngang premultiplied alpha, otherFaces/relevantOtherFaces/roomLeft/roomRight (có nới 0.2*ow cho tai), skippedFace (bỏ cả mặt và gọi putImageData trước khi return).
+
+Thay phần ánh xạ:
+1. Dải dọc: startY = floor(E + 0.12D), endY = min(h-1, ceil(C + 0.05D)).
+   vy = smoothstep(E + 0.12D, C - 0.3D, y) * (1 - smoothstep(C - 0.3D, C + 0.05D, y)).  A = s * F_side * vy (s = strength/100).
+2. Mỗi bên: c_side = 1.8 * F_side; nếu có room thì c_side = Math.min(1.8 * F_side, room - 0.05 * F_side).
+   Nếu c_side < 1.2 * F_side thì bỏ qua cả mặt (skippedFace như hiện tại).
+   wf_side = Math.min(0.6 * F_side, c_side - 0.9 * F_side); b_side = c_side - wf_side.
+3. Với 0 <= d <= c_side (d = |x - cx|, x chạy từ cx ra tới cx ± c_side, kẹp 0..w-1):
+   - d <= Cc: giữ nguyên pixel nguồn (như hiện tại).
+   - còn lại: P = smoothstep(Cc, 0.9 * F_side, d) * (1 - smoothstep(b_side, c_side, d)); srcD = d + A * P; lấy mẫu nguồn tại cx ∓ srcD (trái trừ, phải cộng) bằng nội suy hiện có.
+   (Không còn Fp, M, F + M; ánh xạ luôn đơn điệu vì A * |dP/dd| < 1.)
+4. Cập nhật chú thích đầu hàm cho đúng công thức mới.
+
+KIỂM TRA: build không lỗi; tranh 2D mặt tròn: viền má/hàm mượt kiểu V-line, không lõm khấc, vai không đổi; ảnh chân dung thật 12%: hàm gọn rõ, mắt/mũi/miệng 0 pixel đổi; 2 người đứng sát vẫn không đổi pixel của người bên cạnh.

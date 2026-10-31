@@ -68,8 +68,9 @@ export async function loadDecodedImage(src: string): Promise<HTMLImageElement> {
     await img.decode();
   } else {
     await new Promise((resolve, reject) => {
-      img.onload = () => resolve(img);
-      img.onerror = reject;
+      const el = img as HTMLImageElement;
+      el.onload = () => resolve(img);
+      el.onerror = reject;
     });
   }
   return img;
@@ -94,12 +95,12 @@ export async function prepareRenderAssets(item: QueueItem): Promise<RenderAssets
     isParallaxEnabled &&
     layers &&
     layers.status === 'ready' &&
-    (layers.bgBlobUrl || layers.bgBase64) &&
-    (layers.subjectCutoutDataUrl || layers.subjectCutoutBase64)
+    layers.bgBlobUrl &&
+    (layers.subjectCutoutBlobUrl || layers.subjectCutoutDataUrl)
   ) {
     try {
-      const bgSrc = layers.bgBlobUrl || `data:image/jpeg;base64,${layers.bgBase64}`;
-      const subSrc = layers.subjectCutoutDataUrl || `data:image/png;base64,${layers.subjectCutoutBase64}`;
+      const bgSrc = layers.bgBlobUrl;
+      const subSrc = layers.subjectCutoutBlobUrl || layers.subjectCutoutDataUrl!;
 
       const [bgImg, subImg] = await Promise.all([
         loadDecodedImage(bgSrc),

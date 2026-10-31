@@ -1,0 +1,6 @@
+SỬA NHỎ. CHỈ sửa components/Primitives.tsx và services/video.ts, KHÔNG đổi file khác, KHÔNG xoá chú thích.
+
+1. components/Primitives.tsx PillButton: App.tsx truyền `title` (ví dụ "Đang tải ở Trung tâm tải xuống") nhưng PillButton không nhận nên chú thích khi rê chuột không bao giờ hiện. Thêm `title?: string;` vào props và gắn `title={title}` lên thẻ <button>.
+2. services/video.ts (hàm tạo Blob từ base64, dòng `const chunks: Uint8Array[] = [];`): đổi thành `const chunks: BlobPart[] = [];` (chỉ sửa kiểu, không đổi hành vi).
+
+KIỂM TRA: build không lỗi; khi đang tải ở Trung tâm tải xuống, rê chuột lên nút "Download selected" thấy chú thích.

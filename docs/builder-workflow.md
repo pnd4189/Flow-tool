@@ -63,7 +63,7 @@ Rút ra từ 3 tool đã làm (Image to Video Studio, Long-Form AI Studio, Effec
 | `extract-code.sh <thư mục>` | Chụp toàn bộ code từ tab "Mã" về thư mục (giữ thư mục con). |
 | `tooltext.py <snapshot>` | Rút chữ trong iframe của tool từ một snapshot. |
 | `verify-build.sh <tool-slug>` | Sau mỗi build: chụp code vào `$FLOW_WORK/verify/<slug>`, so với bản trong repo, rồi chạy `check-snapshot.sh`. Không sửa repo. Cần `FLOW_TOOL_ID`. |
-| `check-snapshot.sh <thư mục tool>` | Kiểm tra kiểu `source/` (stub cho react, flow-sdk, JSX) và chạy từng `test-scripts/*.test.ts` bằng node qua esbuild. Lỗi kiểu có sẵn từ trước ghi ở `test-scripts/tsc-known-errors.txt` được bỏ qua, chỉ lỗi mới làm trượt. Lần đầu `npx` tải typescript 5.9.3 và esbuild 0.27.0. |
+| `check-snapshot.sh <thư mục tool>` | Kiểm tra kiểu `source/` (stub cho react, flow-sdk, JSX) và chạy từng `test-scripts/*.test.ts` bằng node qua esbuild. Lỗi kiểu có sẵn từ trước ghi ở `test-scripts/tsc-known-errors.txt` được bỏ qua, chỉ lỗi mới làm trượt (2026-10-31 cả 4 tool đã về 0 lỗi, không còn file này). Lần đầu `npx` tải typescript 5.9.3 và esbuild 0.27.0. |
 
 Script riêng cho Effect-Image nằm ở `tool-snapshots/effect-image/test-scripts/`.
 
@@ -71,4 +71,8 @@ Bài kiểm tra của từng tool (`tool-snapshots/<slug>/test-scripts/`):
 - Effect-Image `prompt-parser.test.ts`: đếm prompt trên các file mẫu ở `test-data/`, gồm 10 cảnh KTT dạng `--- SCENE ---` và file KTT_T04 120 cảnh nếu ổ Drive có gắn.
 - Long-Form `script-import.test.ts`: tách shot và lời thoại khi nạp kịch bản.
 - Retouch `request-router.test.ts`: câu yêu cầu tiếng Việt chạy đúng thuật toán, mặt chỉ bị sửa khi câu nhắc tới mặt.
+- Long-Form `render-take.test.ts`: nhánh lỗi của render với Flow giả lập (bị chặn → AI viết lại 1 lần → thử lại; chặn lần 2 → báo lỗi; hết credit → `QUOTA_ERROR`). Không tốn credit.
+- Image to Video `safety.test.ts`: nhận lỗi chặn tiếng Việt, lọc negative KTT, thang thử lại, AI viết lại prompt.
+- Effect-Image `parallax-assets-browser-probe.js` (chạy trên Chrome, alias thêm `mp4-muxer=flow-builder/scripts/mp4-muxer-stub.js`): lớp parallax "sẵn sàng" phải tới được khung hình dựng ra.
+- Flow giả lập: `flow-sdk-stub.js` ném lỗi với mọi lời gọi Flow, trừ khi bài kiểm tra gán `globalThis.__flowStub = { generate: { … } }`.
 - Retouch `body-reshape-browser-probe.js`: cần canvas thật nên chạy trong một tab `about:blank` của Chrome, không chạy bằng node. Bundle bằng esbuild `--format=iife --global-name=RetouchReshapeProbe --alias:flow-sdk=flow-builder/scripts/flow-sdk-stub.js`, rồi `eval` gọi `RetouchReshapeProbe.runBodyReshapeChecks()`. Dùng phiên agent-browser `flow-builder`: mở phiên mới sẽ làm Chrome hiện hộp hỏi quyền. Sau `tab close` phải `tab t2` để gắn lại tab Flow.

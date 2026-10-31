@@ -305,7 +305,7 @@ Grading scale: 95 perfect, 85 very minor flaws, 75 acceptable minor flaws, 60 no
       matchesPrompt: typeof parsed.matchesPrompt === 'number' ? parsed.matchesPrompt : 80,
       artifacts: Array.isArray(parsed.artifacts) ? parsed.artifacts : [],
       hasUnwantedText: !!parsed.hasUnwantedText,
-      verdict: parsed.verdict === 'regenerate' ? 'regenerate' : 'ok',
+      verdict: (parsed.verdict === 'regenerate' ? 'regenerate' : 'ok') as QCResult['verdict'],
       note: parsed.note || 'Ảnh đã được AI kiểm định.',
     };
   };

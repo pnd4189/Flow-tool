@@ -81,10 +81,10 @@ Yêu cầu: CHỈ TRẢ VỀ DUY NHẤT một mảng JSON thuần túy (không m
   {"noseX": 500, "leftX": 420, "rightX": 580, "eyeY": 340, "chinY": 560, "mouthLeftX": 470, "mouthRightX": 530}
 ]
 Toạ độ chuẩn hoá từ 0 đến 1000:
-- leftX: mép da ngoài cùng của má/hàm bên trái (ngang tầm miệng), KHÔNG tính tai và tóc.
-- rightX: mép da ngoài cùng của má/hàm bên phải (ngang tầm miệng), KHÔNG tính tai và tóc.
+- leftX: mép da ngoài cùng của má/hàm bên trái (ngang tầm miệng), KHÔNG tính tai và tóc. Nếu không vẽ miệng, lấy ngang khoảng 2/3 đường từ mắt xuống đáy cằm.
+- rightX: mép da ngoài cùng của má/hàm bên phải (ngang tầm miệng), KHÔNG tính tai và tóc. Nếu không vẽ miệng, lấy ngang khoảng 2/3 đường từ mắt xuống đáy cằm.
 - eyeY: đường nằm ngang đi qua chính giữa hai mắt.
-- chinY: điểm đáy dưới cùng của cằm.
+- chinY: điểm thấp nhất của hình khuôn mặt (đáy cằm, ngay trên cổ). Với tranh vẽ/hoạt hình không vẽ miệng hoặc cằm, vẫn lấy đáy của hình khuôn mặt, không lấy ngang hàm.
 - noseX: đường sống mũi (trục giữa khuôn mặt).
 - mouthLeftX: khoé miệng bên trái (phía bên trái ảnh, nằm giữa leftX và noseX).
 - mouthRightX: khoé miệng bên phải (phía bên phải ảnh, nằm giữa noseX và rightX).
@@ -222,25 +222,20 @@ function smoothstep(minVal: number, maxVal: number, x: number): number {
 }
 
 /**
- * Thuật toán Face-Aware Liquify nắn thon má/hàm:
+ * Thuật toán Face-Aware Liquify nắn thon má/hàm mượt mà, không khấc và không méo vai:
  * - cx = noseX, E = eyeY, C = chinY, D = C - E.
- * - Chỉ xử lý các hàng y từ E + 0.12*D tới C + 0.35*D (bảo vệ tuyệt đối vùng mắt không bị nắn).
- *   vy = smoothstep(E + 0.12*D, E + 0.5*D, y) * (1 - smoothstep(C - 0.06*D, C + 0.35*D, y)); sy = s*vy;
- * - Hai bên tính riêng (mặt nghiêng): F = cx - leftX (trái) hoặc rightX - cx (phải);
- *   base = 0.65 * F;
- *   Cc = (khoé miệng hợp lệ) ? Math.min(0.8 * F, Math.max(base, Math.abs(mouthX - cx) + 0.15 * F)) : base;
- *   với mouthX = mouthLeftX cho bên trái, mouthRightX cho bên phải.
- *   Fp = F*(1 - sy);
- *   Giới hạn vùng nền M_side tránh lấn vào mặt người khác:
- *     Lọc otherFaces có khoảng dọc giao với [startY, endY].
- *     room_right = min(o.leftX - cx) với o.leftX > cx; room_left = min(cx - o.rightX) với o.rightX < cx.
- *     M_side = Math.min(0.45 * F_side, room - F_side - 0.05 * F_side).
- *     Nếu M_side < 0.1 * F_side: KHÔNG nắn bên đó, skippedSides++.
- *   Với d = |x - cx| trong [0, F + M_side]:
- *     Nếu d <= Cc: giữ nguyên pixel nguồn (KHÔNG nội suy), đếm coreCount.
- *     Nếu Cc < d <= Fp: srcD = Cc + (d - Cc)*(F - Cc)/(Fp - Cc);
- *     Nếu Fp < d <= F + M_side: srcD = F + (d - Fp)*M_side/(F + M_side - Fp);
- * - Nội suy ngang premultiplied alpha cho d > Cc, kẹp 0..w-1. Ngoài các vùng này giữ nguyên pixel.
+ * - Dải dọc: startY = floor(E + 0.12*D), endY = min(h - 1, ceil(C + 0.05*D)) (dừng tại cằm, không kéo xuống vai).
+ *   vy = smoothstep(E + 0.12*D, C - 0.3*D, y) * (1 - smoothstep(C - 0.3*D, C + 0.05*D, y));
+ *   A = s * F_side * vy (s = strengthPercent / 100).
+ * - Hai bên tính riêng: F_side = cx - leftX (trái) hoặc rightX - cx (phải);
+ *   Lõi Cc (sàn 0.65*F_side, trần 0.8*F_side, mở rộng theo khoé miệng nếu hợp lệ).
+ *   c_side = 1.8 * F_side; nếu có khoảng cách tới mặt khác (room) thì c_side = Math.min(1.8 * F_side, room - 0.05 * F_side).
+ *   Nếu c_side < 1.2 * F_side: bỏ qua cả mặt (skippedFace = true).
+ *   wf_side = Math.min(0.6 * F_side, c_side - 0.9 * F_side); b_side = c_side - wf_side.
+ * - Với 0 <= d <= c_side (d = |x - cx|):
+ *   * d <= Cc: giữ nguyên pixel nguồn 100% (bảo vệ mắt, mũi, miệng), đếm coreCount.
+ *   * Còn lại: P = smoothstep(Cc, 0.9 * F_side, d) * (1 - smoothstep(b_side, c_side, d));
+ *     srcD = d + A * P (ánh xạ luôn đơn điệu, không khấc). Lấy mẫu nguồn tại cx ∓ srcD bằng nội suy premultiplied alpha.
  */
 export function applyFaceSlim(
   srcCanvas: HTMLCanvasElement,
@@ -275,13 +270,14 @@ export function applyFaceSlim(
   const C = face.chinY;
   const D = C - E;
 
+  // Dải dọc: dừng ngay tại cằm để không kéo méo vai áo
   const startY = Math.max(0, Math.floor(E + 0.12 * D));
-  const endY = Math.min(h - 1, Math.ceil(C + 0.35 * D));
+  const endY = Math.min(h - 1, Math.ceil(C + 0.05 * D));
 
   const F_left = Math.max(1, cx - face.leftX);
   const F_right = Math.max(1, face.rightX - cx);
 
-  // Lõi Cc mỗi bên tính theo base = 0.65 * F và mở rộng thêm đệm an toàn khoé miệng
+  // Lõi Cc mỗi bên tính theo base = 0.65 * F_left và mở rộng thêm đệm an toàn khoé miệng
   const hasMouthLeft = typeof face.mouthLeftX === 'number' && Number.isFinite(face.mouthLeftX);
   const base_left = 0.65 * F_left;
   const Cc_left = hasMouthLeft
@@ -293,9 +289,6 @@ export function applyFaceSlim(
   const Cc_right = hasMouthRight
     ? Math.min(0.8 * F_right, Math.max(base_right, Math.abs(face.mouthRightX! - cx) + 0.15 * F_right))
     : base_right;
-
-  // Tính toán giới hạn dải nền M_side khi có các khuôn mặt khác
-  let skippedSides = 0;
 
   // Lọc các mặt khác có khoảng dọc giao với [startY, endY]
   const relevantOtherFaces = (otherFaces || []).filter((o) => {
@@ -323,31 +316,21 @@ export function applyFaceSlim(
     }
   }
 
-  let M_left = 0.45 * F_left;
-  let skipLeft = false;
+  let c_left = 1.8 * F_left;
   if (roomLeft !== Infinity) {
-    M_left = Math.min(0.45 * F_left, roomLeft - F_left - 0.05 * F_left);
-    if (M_left < 0.1 * F_left) {
-      skipLeft = true;
-      skippedSides++;
-    }
+    c_left = Math.min(1.8 * F_left, roomLeft - 0.05 * F_left);
   }
 
-  let M_right = 0.45 * F_right;
-  let skipRight = false;
+  let c_right = 1.8 * F_right;
   if (roomRight !== Infinity) {
-    M_right = Math.min(0.45 * F_right, roomRight - F_right - 0.05 * F_right);
-    if (M_right < 0.1 * F_right) {
-      skipRight = true;
-      skippedSides++;
-    }
+    c_right = Math.min(1.8 * F_right, roomRight - 0.05 * F_right);
   }
 
-  // Giữ mặt cân đối: nếu một bên bị bỏ qua thì KHÔNG nắn mặt này (bỏ qua cả hai bên, trả nguyên ảnh nguồn)
-  if (skipLeft || skipRight) {
+  // Nếu một bên không đủ khoảng không an toàn thì bỏ qua cả mặt để đảm bảo cân đối
+  if (c_left < 1.2 * F_left || c_right < 1.2 * F_right) {
     outCtx.putImageData(outImgData, 0, 0);
     return {
-      outputCanvas, // Đã copy nguyên ảnh nguồn
+      outputCanvas,
       changedPixelCount: 0,
       coreCount: 0,
       coreChanged: 0,
@@ -356,158 +339,151 @@ export function applyFaceSlim(
     };
   }
 
+  const wf_left = Math.min(0.6 * F_left, c_left - 0.9 * F_left);
+  const b_left = c_left - wf_left;
+
+  const wf_right = Math.min(0.6 * F_right, c_right - 0.9 * F_right);
+  const b_right = c_right - wf_right;
+
   let changedPixelCount = 0;
   let coreCount = 0;
   let coreChanged = 0;
 
   for (let y = startY; y <= endY; y++) {
     const vy =
-      smoothstep(E + 0.12 * D, E + 0.5 * D, y) *
-      (1 - smoothstep(C - 0.06 * D, C + 0.35 * D, y));
-    const sy = s * vy;
-    if (sy <= 0) continue;
+      smoothstep(E + 0.12 * D, C - 0.3 * D, y) *
+      (1 - smoothstep(C - 0.3 * D, C + 0.05 * D, y));
+
+    if (vy <= 0) continue;
 
     const rowOffset = y * w;
 
-    // Xử lý bên trái (x <= cx)
-    if (!skipLeft) {
-      const F_l = F_left;
-      const Cc_l = Cc_left;
-      const M_l = M_left;
-      const Fp_l = F_l * (1 - sy);
-      const leftLimitX = Math.max(0, Math.floor(cx - (F_l + M_l)));
+    const A_left = s * F_left * vy;
+    const A_right = s * F_right * vy;
 
-      for (let x = leftLimitX; x <= cx; x++) {
-        const d = cx - x;
-        if (d > F_l + M_l) continue;
+    // Xử lý bên trái (x <= cx, d = cx - x)
+    const leftLimitX = Math.max(0, Math.floor(cx - c_left));
+    for (let x = leftLimitX; x <= cx; x++) {
+      const d = cx - x;
+      if (d > c_left) continue;
 
-        const idx = (rowOffset + x) * 4;
+      const idx = (rowOffset + x) * 4;
 
-        // Pixel thuộc lõi (d <= Cc): KHÔNG nội suy, giữ nguyên pixel nguồn
-        if (d <= Cc_l) {
-          coreCount++;
-          out[idx] = src[idx];
-          out[idx + 1] = src[idx + 1];
-          out[idx + 2] = src[idx + 2];
-          out[idx + 3] = src[idx + 3];
-          continue;
-        }
+      // Pixel thuộc lõi (d <= Cc): KHÔNG nội suy, giữ nguyên pixel nguồn
+      if (d <= Cc_left) {
+        coreCount++;
+        out[idx] = src[idx];
+        out[idx + 1] = src[idx + 1];
+        out[idx + 2] = src[idx + 2];
+        out[idx + 3] = src[idx + 3];
+        continue;
+      }
 
-        let srcD: number;
-        if (d <= Fp_l) {
-          srcD = Cc_l + ((d - Cc_l) * (F_l - Cc_l)) / (Fp_l - Cc_l);
-        } else {
-          srcD = F_l + ((d - Fp_l) * M_l) / (F_l + M_l - Fp_l);
-        }
+      // Ánh xạ đơn điệu mượt mà
+      const P =
+        smoothstep(Cc_left, 0.9 * F_left, d) *
+        (1 - smoothstep(b_left, c_left, d));
+      const srcD = d + A_left * P;
 
-        const sx = cx - srcD;
-        const clampedSx = Math.max(0, Math.min(w - 1, sx));
-        const x0 = Math.floor(clampedSx);
-        const x1 = Math.min(w - 1, x0 + 1);
-        const fracX = clampedSx - x0;
+      const sx = cx - srcD;
+      const clampedSx = Math.max(0, Math.min(w - 1, sx));
+      const x0 = Math.floor(clampedSx);
+      const x1 = Math.min(w - 1, x0 + 1);
+      const fracX = clampedSx - x0;
 
-        const idx0 = (rowOffset + x0) * 4;
-        const idx1 = (rowOffset + x1) * 4;
+      const idx0 = (rowOffset + x0) * 4;
+      const idx1 = (rowOffset + x1) * 4;
 
-        const a0 = src[idx0 + 3] / 255;
-        const a1 = src[idx1 + 3] / 255;
+      const a0 = src[idx0 + 3] / 255;
+      const a1 = src[idx1 + 3] / 255;
 
-        const pmR = src[idx0] * a0 * (1 - fracX) + src[idx1] * a1 * fracX;
-        const pmG = src[idx0 + 1] * a0 * (1 - fracX) + src[idx1 + 1] * a1 * fracX;
-        const pmB = src[idx0 + 2] * a0 * (1 - fracX) + src[idx1 + 2] * a1 * fracX;
-        const interpA = src[idx0 + 3] * (1 - fracX) + src[idx1 + 3] * fracX;
+      const pmR = src[idx0] * a0 * (1 - fracX) + src[idx1] * a1 * fracX;
+      const pmG = src[idx0 + 1] * a0 * (1 - fracX) + src[idx1 + 1] * a1 * fracX;
+      const pmB = src[idx0 + 2] * a0 * (1 - fracX) + src[idx1 + 2] * a1 * fracX;
+      const interpA = src[idx0 + 3] * (1 - fracX) + src[idx1 + 3] * fracX;
 
-        const normA = interpA / 255;
-        const finalR = normA > 0 ? Math.round(pmR / normA) : 0;
-        const finalG = normA > 0 ? Math.round(pmG / normA) : 0;
-        const finalB = normA > 0 ? Math.round(pmB / normA) : 0;
-        const finalA = Math.round(interpA);
+      const normA = interpA / 255;
+      const finalR = normA > 0 ? Math.round(pmR / normA) : 0;
+      const finalG = normA > 0 ? Math.round(pmG / normA) : 0;
+      const finalB = normA > 0 ? Math.round(pmB / normA) : 0;
+      const finalA = Math.round(interpA);
 
-        out[idx] = finalR;
-        out[idx + 1] = finalG;
-        out[idx + 2] = finalB;
-        out[idx + 3] = finalA;
+      out[idx] = finalR;
+      out[idx + 1] = finalG;
+      out[idx + 2] = finalB;
+      out[idx + 3] = finalA;
 
-        if (
-          finalR !== src[idx] ||
-          finalG !== src[idx + 1] ||
-          finalB !== src[idx + 2] ||
-          finalA !== src[idx + 3]
-        ) {
-          changedPixelCount++;
-        }
+      if (
+        finalR !== src[idx] ||
+        finalG !== src[idx + 1] ||
+        finalB !== src[idx + 2] ||
+        finalA !== src[idx + 3]
+      ) {
+        changedPixelCount++;
       }
     }
 
-    // Xử lý bên phải (x > cx)
-    if (!skipRight) {
-      const F_r = F_right;
-      const Cc_r = Cc_right;
-      const M_r = M_right;
-      const Fp_r = F_r * (1 - sy);
-      const rightLimitX = Math.min(w - 1, Math.ceil(cx + (F_r + M_r)));
+    // Xử lý bên phải (x > cx, d = x - cx)
+    const rightLimitX = Math.min(w - 1, Math.ceil(cx + c_right));
+    const startRightX = Math.floor(cx) + 1;
 
-      // Đi từ Math.floor(cx) + 1 nếu cx là số thực, hoặc cx + 1
-      const startRightX = Math.floor(cx) + 1;
-      for (let x = startRightX; x <= rightLimitX; x++) {
-        const d = x - cx;
-        if (d > F_r + M_r) continue;
+    for (let x = startRightX; x <= rightLimitX; x++) {
+      const d = x - cx;
+      if (d > c_right) continue;
 
-        const idx = (rowOffset + x) * 4;
+      const idx = (rowOffset + x) * 4;
 
-        // Pixel thuộc lõi (d <= Cc): KHÔNG nội suy, giữ nguyên pixel nguồn
-        if (d <= Cc_r) {
-          coreCount++;
-          out[idx] = src[idx];
-          out[idx + 1] = src[idx + 1];
-          out[idx + 2] = src[idx + 2];
-          out[idx + 3] = src[idx + 3];
-          continue;
-        }
+      // Pixel thuộc lõi (d <= Cc): KHÔNG nội suy, giữ nguyên pixel nguồn
+      if (d <= Cc_right) {
+        coreCount++;
+        out[idx] = src[idx];
+        out[idx + 1] = src[idx + 1];
+        out[idx + 2] = src[idx + 2];
+        out[idx + 3] = src[idx + 3];
+        continue;
+      }
 
-        let srcD: number;
-        if (d <= Fp_r) {
-          srcD = Cc_r + ((d - Cc_r) * (F_r - Cc_r)) / (Fp_r - Cc_r);
-        } else {
-          srcD = F_r + ((d - Fp_r) * M_r) / (F_r + M_r - Fp_r);
-        }
+      // Ánh xạ đơn điệu mượt mà
+      const P =
+        smoothstep(Cc_right, 0.9 * F_right, d) *
+        (1 - smoothstep(b_right, c_right, d));
+      const srcD = d + A_right * P;
 
-        const sx = cx + srcD;
-        const clampedSx = Math.max(0, Math.min(w - 1, sx));
-        const x0 = Math.floor(clampedSx);
-        const x1 = Math.min(w - 1, x0 + 1);
-        const fracX = clampedSx - x0;
+      const sx = cx + srcD;
+      const clampedSx = Math.max(0, Math.min(w - 1, sx));
+      const x0 = Math.floor(clampedSx);
+      const x1 = Math.min(w - 1, x0 + 1);
+      const fracX = clampedSx - x0;
 
-        const idx0 = (rowOffset + x0) * 4;
-        const idx1 = (rowOffset + x1) * 4;
+      const idx0 = (rowOffset + x0) * 4;
+      const idx1 = (rowOffset + x1) * 4;
 
-        const a0 = src[idx0 + 3] / 255;
-        const a1 = src[idx1 + 3] / 255;
+      const a0 = src[idx0 + 3] / 255;
+      const a1 = src[idx1 + 3] / 255;
 
-        const pmR = src[idx0] * a0 * (1 - fracX) + src[idx1] * a1 * fracX;
-        const pmG = src[idx0 + 1] * a0 * (1 - fracX) + src[idx1 + 1] * a1 * fracX;
-        const pmB = src[idx0 + 2] * a0 * (1 - fracX) + src[idx1 + 2] * a1 * fracX;
-        const interpA = src[idx0 + 3] * (1 - fracX) + src[idx1 + 3] * fracX;
+      const pmR = src[idx0] * a0 * (1 - fracX) + src[idx1] * a1 * fracX;
+      const pmG = src[idx0 + 1] * a0 * (1 - fracX) + src[idx1 + 1] * a1 * fracX;
+      const pmB = src[idx0 + 2] * a0 * (1 - fracX) + src[idx1 + 2] * a1 * fracX;
+      const interpA = src[idx0 + 3] * (1 - fracX) + src[idx1 + 3] * fracX;
 
-        const normA = interpA / 255;
-        const finalR = normA > 0 ? Math.round(pmR / normA) : 0;
-        const finalG = normA > 0 ? Math.round(pmG / normA) : 0;
-        const finalB = normA > 0 ? Math.round(pmB / normA) : 0;
-        const finalA = Math.round(interpA);
+      const normA = interpA / 255;
+      const finalR = normA > 0 ? Math.round(pmR / normA) : 0;
+      const finalG = normA > 0 ? Math.round(pmG / normA) : 0;
+      const finalB = normA > 0 ? Math.round(pmB / normA) : 0;
+      const finalA = Math.round(interpA);
 
-        out[idx] = finalR;
-        out[idx + 1] = finalG;
-        out[idx + 2] = finalB;
-        out[idx + 3] = finalA;
+      out[idx] = finalR;
+      out[idx + 1] = finalG;
+      out[idx + 2] = finalB;
+      out[idx + 3] = finalA;
 
-        if (
-          finalR !== src[idx] ||
-          finalG !== src[idx + 1] ||
-          finalB !== src[idx + 2] ||
-          finalA !== src[idx + 3]
-        ) {
-          changedPixelCount++;
-        }
+      if (
+        finalR !== src[idx] ||
+        finalG !== src[idx + 1] ||
+        finalB !== src[idx + 2] ||
+        finalA !== src[idx + 3]
+      ) {
+        changedPixelCount++;
       }
     }
   }
@@ -526,7 +502,7 @@ export function applyFaceSlim(
     changedPixelCount,
     coreCount,
     coreChanged,
-    skippedSides,
+    skippedSides: 0,
     skippedFace: false,
   };
 }
