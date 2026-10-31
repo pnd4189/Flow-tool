@@ -1,4 +1,4 @@
-// Rule-based request routing of Retouch Studio. Run through flow-builder/scripts/check-snapshot.sh.
+// Rule-based request routing of Retouch Studio. Run through flow-tools/_shared/scripts/check-snapshot.sh.
 // The face may only be touched when the request names the face; Vietnamese is matched as whole
 // accented words ("chỉnh" must not match "chin", "béo" must not match "eo").
 import assert from 'node:assert/strict';

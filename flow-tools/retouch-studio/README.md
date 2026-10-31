@@ -4,9 +4,9 @@ Tool mới trong dự án Flow **Youtube studio**, id `11f70fa9-de9d-4918-8c64-e
 
 - Dùng: https://flow.google.com/project/6c4180b7-8276-4ff6-aa71-0d0abbdcd3a6/tool/11f70fa9-de9d-4918-8c64-e8f4d9e77644?mode=APP
 - Builder: cùng URL với `mode=EDIT`.
-- Source sao lưu: `tool-snapshots/retouch-studio/source/`.
-- Prompt đã gửi: `flow-builder/prompts/retouch-studio/`.
-- Kế hoạch và bằng chứng: `plans/20261030-2017-retouch-studio/plan.md`, `tool-snapshots/retouch-studio/test-results/`.
+- Source sao lưu: `flow-tools/retouch-studio/source/`.
+- Prompt đã gửi: `flow-tools/retouch-studio/prompts/`.
+- Kế hoạch và bằng chứng: `plans/20261030-2017-retouch-studio/plan.md`, `flow-tools/retouch-studio/test-results/`.
 
 ## Cách dùng
 
@@ -57,7 +57,7 @@ Chưa kiểm kỹ: ảnh 4K/16 MP, tóc/lông phức tạp, vật trong suốt, 
 - Bản xem trước chỉnh dáng và ảnh đã áp dụng/xuất khớp hoàn toàn. Hoàn tác sau đổi trời khôi phục đúng ảnh nguồn, làm lại khôi phục đúng bản đổi trời. Nút thực hiện vẫn nhìn thấy ở viewport 1328×567; prompt trống bị chặn với lý do rõ ràng.
 - Kiểm tra TypeScript phát hiện biến tham chiếu chưa khai báo và năm kiểu trả về nền thiếu revision. Đã sửa: preview nháp dùng kiểu không có revision, helper thêm revision đã chụp trước khi nhận kết quả; không nới lỏng hợp đồng preview đã nhận. Kiểm tra kiểu nội bộ qua trên 22 tệp và browser bundle qua, 0 cảnh báo; khai báo module React/Flow SDK chưa được kiểm tra đầy đủ tại máy.
 
-- Bảy bài kiểm tra trên canvas thật của Chrome qua: kích thước/nguồn bất biến, bảo toàn vùng khóa/ngoài chọn, đếm pixel, không gấp ảnh ở mức tối đa, đường viền hẹp đi thật, mép alpha không tối và từ chối đầu vào không hợp lệ. Bài kiểm tra: `tool-snapshots/retouch-studio/test-scripts/body-reshape-browser-probe.js`; bundle dạng IIFE bằng esbuild rồi chạy `RetouchReshapeProbe.runBodyReshapeChecks()` trong Chrome. Không mock canvas hoặc SDK.
+- Bảy bài kiểm tra trên canvas thật của Chrome qua: kích thước/nguồn bất biến, bảo toàn vùng khóa/ngoài chọn, đếm pixel, không gấp ảnh ở mức tối đa, đường viền hẹp đi thật, mép alpha không tối và từ chối đầu vào không hợp lệ. Bài kiểm tra: `flow-tools/retouch-studio/test-scripts/body-reshape-browser-probe.js`; bundle dạng IIFE bằng esbuild rồi chạy `RetouchReshapeProbe.runBodyReshapeChecks()` trong Chrome. Không mock canvas hoặc SDK.
 
 Thanh phần trăm là cường độ nắn ảnh, không phải phép đo vòng eo. Mức lớn có thể uốn nền trong vùng chọn; cần xem trước và chọn mức phù hợp. Mép tóc/cây tương phản cao có thể cần tinh chỉnh mặt nạ. Không suy từ ba phép thử này rằng mọi chế độ đều đã được kiểm lại trên ảnh thật.
 
