@@ -19,6 +19,8 @@ export interface Scene {
   };
   errorMessage?: string;
   retryInfo?: string;
+  originalPrompt?: string;
+  safetyNote?: string;
 }
 
 export type VideoModelId = 'Omni 1.1 Flash' | 'Veo 3.1 - Lite' | 'Veo 3.1 - Fast' | 'Veo 3.1 - Quality';

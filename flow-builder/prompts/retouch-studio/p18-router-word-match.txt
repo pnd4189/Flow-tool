@@ -1,0 +1,24 @@
+SỬA LỖI NGUY HIỂM trong services/requestRouter.ts (chỉ sửa file này, KHÔNG đổi file khác). Hiện "chỉnh bụng nhân vật gọn lại" lại ra cả face_slim (tự ý sửa mặt), và "khuôn mặt đỡ béo" ra cả body_slim. Nguyên nhân: so trên chuỗi BỎ DẤU và tìm chuỗi con: "chỉnh"→"chinh" chứa "chin", "béo"→"beo" chứa "eo", "mát hơn"→"mat hon" trùng "mặt".
+
+Sửa routeByRules:
+1. Bỏ hẳn so chuỗi bỏ dấu cho từ tiếng Việt. Chuẩn hoá text = raw.normalize('NFC').toLowerCase().
+2. Thêm helper so NGUYÊN TỪ hỗ trợ Unicode:
+   const hasWord = (s: string, words: string[]) => new RegExp(`(?<![\\p{L}\\p{M}\\d])(?:${words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})(?![\\p{L}\\p{M}\\d])`, 'iu').test(s);
+   Mọi phép dò từ khoá trong hàm dùng hasWord (cụm nhiều từ như "bớt béo", "sáng hơn" vẫn dùng được).
+3. Tách câu thành các vế theo /[,;.\n]+|\s+và\s+|\s+and\s+/ ; mỗi vế xét riêng, gộp kết quả (không trùng op; op 'color' gộp tham số).
+4. Mặt (face_slim) CHỈ khi trong CÙNG một vế có từ mặt VÀ từ thon gọn:
+   từ mặt: ['mặt','khuôn mặt','gương mặt','má','gò má','cằm','hàm','quai hàm','face','cheek','cheeks','jaw','jawline','chin','v-line','vline'];
+   loại trừ khi "mặt" nằm trong cụm 'mặt trời','mặt nước','mặt đất','mặt bàn','mặt hồ','mặt biển','bề mặt','mặt tiền' (xoá các cụm này khỏi vế trước khi dò).
+   từ thon gọn: ['gọn','gọn lại','gọn hơn','thon','thon gọn','nhỏ lại','nhỏ hơn','bớt béo','đỡ béo','bớt mập','đỡ mập','slim','slimmer','thin','thinner','v-line','vline'].
+5. Thân (body_slim) chỉ khi cùng vế có từ thân ['bụng','eo','vòng eo','thân','thân hình','dáng','người','body','waist','belly','tummy'] VÀ từ thon gọn, và vế đó KHÔNG có từ mặt.
+6. Các nhóm màu/nền/tự động giữ nguyên ý nghĩa nhưng dò bằng hasWord trên bản có dấu (+ từ tiếng Anh).
+7. routeWithAI: sau khi nhận JSON, nếu có op 'face_slim' mà văn bản gốc không có từ mặt theo mục 4 thì BỎ op đó (AI không được tự quyết sửa mặt).
+
+KIỂM TRA (kết quả mong đợi):
+- "chỉnh bụng nhân vật gọn lại" → chỉ body_slim 15
+- "khuôn mặt đỡ béo" → chỉ face_slim 8
+- "mặt bớt béo, ảnh sáng hơn" → face_slim 8 + color exposure +20
+- "làm mặt gọn hơn 10%" → face_slim 10
+- "ảnh mát hơn" → color temperature -20, không có face_slim
+- "chỉnh màu mặt trời rực hơn" → color saturation +20, không có face_slim
+- "thon gọn eo 20%" → body_slim 20

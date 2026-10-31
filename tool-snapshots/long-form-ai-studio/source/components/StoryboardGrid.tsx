@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Shot, Scene, Character, ProjectConfig, KeyframeInfo } from '../services/types';
+import { Shot, Scene, Character, ProjectConfig, KeyframeInfo, ShotsUpdate } from '../services/types';
 import {
   KeyframeSlot,
   buildKeyframeSlots,
@@ -13,8 +13,9 @@ interface StoryboardGridProps {
   scenes: Scene[];
   characters: Character[];
   config: ProjectConfig;
-  onUpdateShots: (updatedShots: Shot[]) => void;
+  onUpdateShots: (update: ShotsUpdate) => void;
   onUpdateScenes?: (updatedScenes: Scene[]) => void;
+  onGeneratingChange?: (isGenerating: boolean) => void;
 }
 
 export const StoryboardGrid: React.FC<StoryboardGridProps> = ({
@@ -24,6 +25,7 @@ export const StoryboardGrid: React.FC<StoryboardGridProps> = ({
   config,
   onUpdateShots,
   onUpdateScenes,
+  onGeneratingChange,
 }) => {
   const [slots, setSlots] = useState<KeyframeSlot[]>([]);
   const [autoGenLocationRef, setAutoGenLocationRef] = useState(true);
@@ -57,8 +59,8 @@ export const StoryboardGrid: React.FC<StoryboardGridProps> = ({
     pauseRequestedRef.current = false;
     setIsGenerating(true);
     setIsPaused(false);
+    if (onGeneratingChange) onGeneratingChange(true);
 
-    let currentShots = [...shotsRef.current];
     let currentScenes = [...scenes];
 
     // Tự sinh ảnh bối cảnh cho các scene chưa có nếu bật tùy chọn
@@ -77,8 +79,13 @@ export const StoryboardGrid: React.FC<StoryboardGridProps> = ({
       }
     }
 
-    // Xác định danh sách slotId cần sinh lúc bắt đầu
-    const initialSlots = buildKeyframeSlots(currentShots, currentScenes, characters, config);
+    // Khai báo mảng lưu các keyframe được sinh thành công trong lượt chạy này
+    const generatedInRun: Array<{ slot: KeyframeSlot; kf: KeyframeInfo }> = [];
+    const withRun = (base: Shot[]) =>
+      generatedInRun.reduce((acc, g) => applyKeyframeToShots(acc, g.slot, g.kf), base);
+
+    // Xác định danh sách slotId cần sinh từ shotsRef.current mới nhất
+    const initialSlots = buildKeyframeSlots(shotsRef.current, currentScenes, characters, config);
     const targetSlotIds: string[] = [];
     initialSlots.forEach((s) => {
       if (mode === 'all' || !s.currentKeyframe) {
@@ -88,63 +95,77 @@ export const StoryboardGrid: React.FC<StoryboardGridProps> = ({
 
     if (targetSlotIds.length === 0) {
       setIsGenerating(false);
+      if (onGeneratingChange) onGeneratingChange(false);
       return;
     }
 
-    for (let i = 0; i < targetSlotIds.length; i++) {
-      if (stopRequestedRef.current) break;
-
-      while (pauseRequestedRef.current) {
-        await new Promise((r) => setTimeout(r, 400));
+    try {
+      for (let i = 0; i < targetSlotIds.length; i++) {
         if (stopRequestedRef.current) break;
-      }
-      if (stopRequestedRef.current) break;
 
-      const targetId = targetSlotIds[i];
+        while (pauseRequestedRef.current) {
+          await new Promise((r) => setTimeout(r, 400));
+          if (stopRequestedRef.current) break;
+        }
+        if (stopRequestedRef.current) break;
 
-      // TÍNH LẠI SLOTS từ currentShots và currentScenes mới nhất để lấy đúng prompt + refMediaIds kế thừa
-      const freshSlots = buildKeyframeSlots(currentShots, currentScenes, characters, config);
-      const slot = freshSlots.find((s) => s.slotId === targetId);
+        const targetId = targetSlotIds[i];
 
-      if (!slot) continue;
+        // TÍNH LẠI SLOTS từ withRun(shotsRef.current) để nhận keyframe vừa tạo làm ảnh tham chiếu nối cảnh
+        const freshSlots = buildKeyframeSlots(withRun(shotsRef.current), currentScenes, characters, config);
+        const slot = freshSlots.find((s) => s.slotId === targetId);
 
-      setCurrentSlotId(targetId);
-      setProgressText(`Đang sinh ${i + 1}/${targetSlotIds.length}: ${slot.label}`);
+        if (!slot) continue;
 
-      setSlots((prev) =>
-        prev.map((s) =>
-          s.slotId === targetId ? { ...s, status: 'pending', errorMessage: undefined } : s
-        )
-      );
+        setCurrentSlotId(targetId);
+        setProgressText(`Đang sinh ${i + 1}/${targetSlotIds.length}: ${slot.label}`);
 
-      try {
-        const kf: KeyframeInfo = await generateSingleKeyframeWithRetry(
-          slot.prompt,
-          config,
-          slot.referenceMediaIds
-        );
-
-        // Áp dụng keyframe vào currentShots để lượt kế tiếp kế thừa
-        currentShots = applyKeyframeToShots(currentShots, slot, kf);
-        onUpdateShots(currentShots);
-
-        // Tính lại slots hiển thị bao gồm refSummary mới
-        const updatedSlots = buildKeyframeSlots(currentShots, currentScenes, characters, config);
-        setSlots(updatedSlots);
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
         setSlots((prev) =>
           prev.map((s) =>
-            s.slotId === targetId ? { ...s, status: 'error', errorMessage: errorMsg } : s
+            s.slotId === targetId ? { ...s, status: 'pending', errorMessage: undefined } : s
           )
         );
-      }
-    }
 
-    setIsGenerating(false);
-    setIsPaused(false);
-    setCurrentSlotId(null);
-    setProgressText('');
+        try {
+          const kf: KeyframeInfo = await generateSingleKeyframeWithRetry(
+            slot.prompt,
+            config,
+            slot.referenceMediaIds
+          );
+
+          // Lưu vào danh sách các keyframe đã sinh trong lượt chạy
+          generatedInRun.push({ slot, kf });
+
+          // Cập nhật shots theo dạng hàm nhận prev để không ghi đè take/chỉnh sửa shot khác
+          onUpdateShots((prevShots) => applyKeyframeToShots(prevShots, slot, kf));
+
+          // Cập nhật slots hiển thị cục bộ
+          setSlots((prev) =>
+            prev.map((s) =>
+              s.slotId === targetId
+                ? { ...s, currentKeyframe: kf, status: 'done', errorMessage: undefined }
+                : s
+            )
+          );
+        } catch (err: unknown) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          setSlots((prev) =>
+            prev.map((s) =>
+              s.slotId === targetId ? { ...s, status: 'error', errorMessage: errorMsg } : s
+            )
+          );
+        }
+      }
+
+      // Sau vòng lặp, cập nhật lại toàn bộ slots từ withRun(shotsRef.current) để hiển thị đúng tham chiếu
+      setSlots(buildKeyframeSlots(withRun(shotsRef.current), currentScenes, characters, config));
+    } finally {
+      setIsGenerating(false);
+      setIsPaused(false);
+      setCurrentSlotId(null);
+      setProgressText('');
+      if (onGeneratingChange) onGeneratingChange(false);
+    }
   };
 
   const handlePauseToggle = () => {
@@ -164,7 +185,7 @@ export const StoryboardGrid: React.FC<StoryboardGridProps> = ({
   };
 
   const handleRegenerateSingle = async (targetSlotId: string) => {
-    // Tính slots mới nhất
+    // Tính slots từ shotsRef.current mới nhất
     const freshSlots = buildKeyframeSlots(shotsRef.current, scenes, characters, config);
     const slot = freshSlots.find((s) => s.slotId === targetSlotId);
     if (!slot) return;
@@ -181,17 +202,22 @@ export const StoryboardGrid: React.FC<StoryboardGridProps> = ({
         config,
         slot.referenceMediaIds
       );
-      const updatedShots = applyKeyframeToShots(shotsRef.current, slot, kf);
-      onUpdateShots(updatedShots);
+      // Ghi theo hàm cập nhật
+      onUpdateShots((prevShots) => applyKeyframeToShots(prevShots, slot, kf));
 
-      const nextSlots = buildKeyframeSlots(updatedShots, scenes, characters, config);
+      // nextSlots tính từ applyKeyframeToShots(shotsRef.current, slot, kf) thay vì shotsRef.current
+      const nextSlots = buildKeyframeSlots(
+        applyKeyframeToShots(shotsRef.current, slot, kf),
+        scenes,
+        characters,
+        config
+      );
       const slotIndex = nextSlots.findIndex((s) => s.slotId === targetSlotId);
 
-      // Đánh dấu chấm vàng cho các slot kế tiếp trong cùng scene có hasContinuityRef
       setSlots(
         nextSlots.map((s, idx) => {
           if (s.slotId === targetSlotId) {
-            return { ...s, needsSyncWarning: false };
+            return { ...s, currentKeyframe: kf, status: 'done', needsSyncWarning: false };
           }
           if (idx > slotIndex && s.hasContinuityRef) {
             return { ...s, needsSyncWarning: true };
@@ -213,11 +239,12 @@ export const StoryboardGrid: React.FC<StoryboardGridProps> = ({
     const slot = slots.find((s) => s.slotId === targetSlotId);
     if (!slot) return;
 
-    const updatedShots = applyKeyframeToShots(shotsRef.current, slot, undefined);
-    onUpdateShots(updatedShots);
-
-    const nextSlots = buildKeyframeSlots(updatedShots, scenes, characters, config);
-    setSlots(nextSlots);
+    onUpdateShots((prevShots) => applyKeyframeToShots(prevShots, slot, undefined));
+    setSlots((prev) =>
+      prev.map((s) =>
+        s.slotId === targetSlotId ? { ...s, currentKeyframe: undefined, status: 'idle' } : s
+      )
+    );
   };
 
   return (
@@ -307,7 +334,7 @@ export const StoryboardGrid: React.FC<StoryboardGridProps> = ({
                     setConfirmRegenAll(true);
                     setTimeout(() => setConfirmRegenAll(false), 3500);
                   }}
-                  className="px-2.5 py-1.5 rounded bg-[#252525] hover:bg-[#303030] disabled:opacity-40 text-slate-300 border border-[#595959]/40 text-xs flex items-center gap-1 transition"
+                  className="px-2.5 py-1 rounded bg-[#252525] hover:bg-[#303030] disabled:opacity-40 text-slate-300 border border-[#595959]/40 text-xs flex items-center gap-1 transition"
                   title="Sinh lại toàn bộ ảnh (xác nhận 2 bước)"
                 >
                   <span className="material-symbols-outlined text-[15px]">restart_alt</span>

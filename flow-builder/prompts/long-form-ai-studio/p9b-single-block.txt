@@ -1,0 +1,8 @@
+SỬA services/scriptImport.ts. CHỈ sửa 2 chỗ nêu dưới, KHÔNG đổi file khác, KHÔNG xoá chú thích.
+
+Lỗi đo được: file chỉ có MỘT khối "--- SCENE 001 ---" với các dòng Setting/Subject/Action/Style → "Không tìm thấy shot nào trong file để nhập" (0 shot). Nguyên nhân: (a) nhánh khối có cấu trúc chỉ chạy khi headerIndices.length >= 2; (b) xuống nhánh kịch bản thường, mọi dòng đều là nhãn nên chỉ vào pendingLabelSuffixes, cảnh kết thúc mà không tạo shot nào.
+
+1. Đổi điều kiện "if (headerIndices.length >= 2)" thành "if (headerIndices.length >= 1)". Phần còn lại của nhánh (yêu cầu ít nhất một nửa số khối có >= 2 nhãn) giữ nguyên.
+2. Nhánh kịch bản thường: lưu nhãn chờ dạng thô { rawKey, mappedType, content } thay vì chuỗi đã định dạng (consumePendingSuffixes vẫn trả ` (${rawKey}: ${content})` nối nhau như hiện tại). Thêm flushPendingAsShot(): nếu còn nhãn chờ và currentScene CHƯA có shot nào thì tạo 1 shot beat (cùng các trường mặc định, transitionIn, characterIds mặc định như shot beat hiện có) với actionBeat = nội dung nhãn có mappedType 'action' hoặc 'storydna' (không có thì nội dung nhãn đầu tiên), action = actionBeat + các nhãn còn lại dạng ` (${rawKey}: ${content})`; rồi xoá danh sách chờ. Gọi flushPendingAsShot() ngay TRƯỚC khi xoá danh sách chờ lúc gặp tiêu đề cảnh mới, và một lần sau khi hết vòng lặp các dòng (trước bước gom 4 shot/scene).
+
+KIỂM TRA: file 1 khối "--- SCENE 001 --- / Setting: … / Subject: … / Action / Energy: The fox gently turns a brass crank… / Style: …" → 1 shot, action chứa "brass crank". "CẢNH 1: Xưởng gỗ / Camera: wide shot / Action: Con cáo quay tay quay" → 1 shot, action chứa "Con cáo quay tay quay" và "(Camera: wide shot)". File KTT 120 cảnh vẫn 120 shot.

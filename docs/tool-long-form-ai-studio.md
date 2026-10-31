@@ -54,3 +54,33 @@ Các model Veo; 720p và clip 8–10 s; Short 9:16; tạo bảng nhân vật t�
 ## Gợi ý còn treo
 
 Thêm chế độ "chuyển động 0 credit" (dùng lại máy quay + hiệu ứng phủ của Effect-Image thay cho model video); ghép hậu kỳ bằng ffmpeg/Remotion (dựng nặng chạy Colab). User chưa quyết.
+
+## Sửa lỗi 2026-10-31 (`p8a`, `p8a2`, `p8b`, `p8b2`, `p8c`)
+
+Soát code tìm ra 6 lỗi nặng và 14 lỗi vừa/nhẹ; đã sửa hết qua builder:
+- **Render và credit.** Bước Storyboard và Render luôn được dựng sẵn, chỉ ẩn đi, nên rời bước không làm mất tiến trình và nút Dừng. Mọi chỗ ghi shot dùng cập nhật theo id từ state mới nhất, không còn ghi đè take/chỉnh sửa. Shot đang `rendering` không bị gửi lại. ShotInspector có kiểm tra/trừ credit. "Render lại lệch mạch" dùng keyframe mới và tạo lock mới.
+- **Timeout.** Chỉ tính thời gian chờ video, nâng lên 900 giây. Shot có lỗi `TIMEOUT:` không bị lô "Render lỗi" gửi lại; vẫn render tay được.
+- **Lỗi tiếng Việt và chính sách.** Nhận ra lỗi quota/chính sách tiếng Việt. Bị chặn thì AI viết lại prompt video và thử lại đúng 1 lần.
+- **Nạp kịch bản.** File dạng `--- SCENE 001 ---` + các dòng nhãn được tách mỗi khối thành 1 shot. "Camera:", "Năm 1876:" không còn bị coi là lời thoại. Viết kịch bản AI lỗi giữa chừng không xoá storyboard; có nút "Thêm scene đã viết" và "Thử lại từ scene lỗi".
+- **Xuất và nối cảnh.** `concat_list` chỉ gồm shot đã render. Tên file tải ở bước Render khớp danh sách ghép. "Nạp lại từ thư viện" cảnh báo khi chọn nhầm video. Đổi cut→chain dùng keyframe chung và đánh dấu take lệch mạch. Đổi 16:9↔9:16 cảnh báo và đánh dấu take. Director không xoá hiệu ứng khi AI trả id sai.
+
+Đã kiểm:
+- Kiểm tra kiểu TypeScript (khai báo giả cho React/SDK) trên toàn bộ code: 0 lỗi.
+- Parser: chạy bằng node trên file KTT_T04 thật ra 120 shot.
+- Chạy thật trên Flow, chỉ đường 0 credit: nạp 3 cảnh → 3 scene/3 shot; tạo 6/6 keyframe, keyframe cuối tham chiếu đúng keyframe trước; rời bước giữa chừng rồi quay lại vẫn còn tiến trình và nút Dừng; nút render bị khoá khi đang tạo keyframe.
+
+Render video thật đã chạy ở mục dưới. Còn chưa gặp thật: timeout 900 s, AI viết lại prompt video khi bị chặn, credit trừ ở ShotInspector.
+
+## Nạp kịch bản và render thật — 2026-10-31 tối (`p9`, `p9b`)
+
+- **Kịch bản dạng thường:**
+  - Cảnh mở đầu bằng câu thoại ("LAN: Chào anh") không còn bị đưa vào action thành nội dung hình. Câu thoại tạo shot "LAN nói" kèm lời thoại.
+  - Thoại không còn gắn nhầm sang shot của cảnh trước, hai câu thoại liên tiếp không còn ghi đè nhau.
+  - Dòng nhãn ("Camera: slow push in") gắn vào shot đang có thay vì tạo shot riêng. Cảnh chỉ toàn nhãn vẫn tạo được 1 shot.
+- **File chỉ có một khối `--- SCENE 001 ---`** từng báo "Không tìm thấy shot nào". Đây là lỗi do bản `p9` gây ra, lộ ra khi chạy thật; đã sửa, giờ ra 1 shot.
+- **Bài kiểm tra:** `test-scripts/script-import.test.ts`, chạy bằng `flow-builder/scripts/check-snapshot.sh`. Có thêm file KTT_T04 đủ 120 shot khi ổ Drive có gắn.
+- **Render thật (tốn 4 credit, user đồng ý):**
+  - Nạp 1 khối → 1 shot. Tạo 2/2 keyframe (0 credit). Đặt Omni 1.1 Flash 360p 4 s; nút ghi "Quay (4 cr)".
+  - Take #1 xong sau ~41 s. AI chấm 75 điểm. Bộ đếm ngân sách 6.000 → 5.996.
+  - "Tải tất cả clip" ra `long_form_ai_studio_001_…_t1.mp4`: h264 640×360, 24 fps, có AAC, 4,03 s, 1,6 MB. Nội dung đúng kịch bản (cáo 2D quay tay quay, máy bay giấy bay lên).
+  - Ảnh và video thử đã chuyển vào Thùng rác của Flow.

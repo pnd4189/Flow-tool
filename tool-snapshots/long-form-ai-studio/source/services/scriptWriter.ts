@@ -184,12 +184,60 @@ ${isHistoryOrInvention ? `Invention Topic: ${params.inventionTopic || params.ide
     throw new Error(`Parse JSON dàn ý thất bại: ${err instanceof Error ? err.message : String(err)}. Phản hồi: ${text.slice(0, 200)}`);
   }
 
-  // Chuẩn hóa shotCount
-  if (Array.isArray(parsed.scenes)) {
+  // 8. Cắt/ghép cho đúng số mục tiêu (targetShots) thay vì chỉ Math.max(1, ...)
+  if (Array.isArray(parsed.scenes) && parsed.scenes.length > 0) {
     let currentTotal = parsed.scenes.reduce((sum: number, sc: any) => sum + (Number(sc.shotCount) || 1), 0);
-    if (currentTotal !== params.targetShots && parsed.scenes.length > 0) {
-      const diff = params.targetShots - currentTotal;
-      parsed.scenes[parsed.scenes.length - 1].shotCount = Math.max(1, (parsed.scenes[parsed.scenes.length - 1].shotCount || 1) + diff);
+    const target = params.targetShots;
+
+    while (currentTotal > target) {
+      // Dư shot: tìm scene có nhiều shot nhất (hoặc beat dài nhất) để cắt bớt 1 shot
+      let maxIdx = 0;
+      let maxCount = -1;
+      for (let i = 0; i < parsed.scenes.length; i++) {
+        const cnt = Number(parsed.scenes[i].shotCount) || 1;
+        if (cnt > maxCount) {
+          maxCount = cnt;
+          maxIdx = i;
+        }
+      }
+      if (maxCount <= 1) {
+        // Mỗi scene chỉ còn 1 shot nhưng vẫn thừa: cắt bỏ scene cuối cùng
+        if (parsed.scenes.length > 1) {
+          parsed.scenes.pop();
+          currentTotal--;
+          continue;
+        } else {
+          parsed.scenes[0].shotCount = target;
+          break;
+        }
+      }
+      parsed.scenes[maxIdx].shotCount = maxCount - 1;
+      if (Array.isArray(parsed.scenes[maxIdx].beats) && parsed.scenes[maxIdx].beats.length > parsed.scenes[maxIdx].shotCount) {
+        // Cắt bớt beat cuối hoặc gộp vào beat áp chót
+        const popped = parsed.scenes[maxIdx].beats.pop();
+        if (parsed.scenes[maxIdx].beats.length > 0 && popped) {
+          parsed.scenes[maxIdx].beats[parsed.scenes[maxIdx].beats.length - 1] += ` (${popped})`;
+        }
+      }
+      currentTotal--;
+    }
+
+    while (currentTotal < target) {
+      // Thiếu shot: tìm scene có ít shot nhất hoặc beat dài nhất để tách thêm 1 shot
+      let minIdx = 0;
+      let minCount = Infinity;
+      for (let i = 0; i < parsed.scenes.length; i++) {
+        const cnt = Number(parsed.scenes[i].shotCount) || 1;
+        if (cnt < minCount) {
+          minCount = cnt;
+          minIdx = i;
+        }
+      }
+      parsed.scenes[minIdx].shotCount = (Number(parsed.scenes[minIdx].shotCount) || 1) + 1;
+      if (Array.isArray(parsed.scenes[minIdx].beats)) {
+        parsed.scenes[minIdx].beats.push(`Chi tiết bổ sung cho ${parsed.scenes[minIdx].title}`);
+      }
+      currentTotal++;
     }
   }
 
@@ -223,7 +271,7 @@ CRITICAL LANGUAGE & STORYTELLING RULES:
 1. "action" MUST be in detailed, observable ENGLISH describing machinery, characters, and physics (never Vietnamese). Describe machine shapes specifically in English so generative models draw the era correctly.
 2. "subject" MUST be in concise ENGLISH (e.g. "Early steam contraption on three wheels", "Eccentric Victorian inventor").
 3. "startPose" and "endPose" MUST be in concise observable ENGLISH.
-4. "ambient" and "sfx" MUST be in concise ENGLISH (e.g. "steam hissing, ticking gears", "metallic clang, engine sputter").
+4. "ambient" and "sfx" MUST be in concise ENGLISH (e.g. "steam hiss, ticking gears", "metallic clang, engine sputter").
 5. "actionVi" is in Vietnamese (under 15 words) strictly for UI display to the user.
 6. "narration" (Voice-Over):
    - Written in ${params.dialogueLanguage}.
@@ -303,7 +351,42 @@ Current Scene:
     throw new Error(`Scene ${params.sceneIndex + 1} không trả về mảng shot. Phản hồi: ${text.slice(0, 200)}`);
   }
 
-  return parsed.map((sh: any, sIdx: number) => {
+  // 8. Đảm bảo đúng số lượng shot mục tiêu của scene: cắt bớt nếu thừa, bù thêm nếu thiếu
+  const targetSceneShotCount = currentScene.shotCount;
+  let normalizedShots = [...parsed];
+
+  if (normalizedShots.length > targetSceneShotCount) {
+    normalizedShots = normalizedShots.slice(0, targetSceneShotCount);
+  } else if (normalizedShots.length < targetSceneShotCount) {
+    const lastTemplate = normalizedShots[normalizedShots.length - 1] || {
+      action: 'character performs scene actions',
+      actionVi: 'Hành động tiếp theo',
+      subject: '',
+      characterNames: [],
+      dialogue: '',
+      narration: '',
+      startPose: 'standing',
+      endPose: 'standing',
+      shotSize: 'medium',
+      cameraAngle: 'eye_level',
+      cameraMovement: 'pan_slow',
+      lens: 'normal',
+      effects: [],
+      ambient: '',
+      sfx: '',
+      transitionIn: 'chain',
+    };
+    while (normalizedShots.length < targetSceneShotCount) {
+      normalizedShots.push({
+        ...lastTemplate,
+        action: `${lastTemplate.action} (continued continuation)`,
+        actionVi: `${lastTemplate.actionVi} (tiếp diễn)`,
+        transitionIn: 'chain',
+      });
+    }
+  }
+
+  return normalizedShots.map((sh: any, sIdx: number) => {
     const isFirst = sIdx === 0;
     return {
       action: typeof sh.action === 'string' ? sh.action.trim() : 'character moves within frame',

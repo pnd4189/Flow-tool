@@ -1,11 +1,11 @@
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   Shot,
   Scene,
   Character,
   ProjectConfig,
-  VideoTake,
   getActiveTake,
+  ShotsUpdate,
 } from '../services/types';
 import {
   getShotKeyframes,
@@ -16,9 +16,9 @@ import {
 } from '../services/renderService';
 import {
   DownloadItem,
-  generateVideoFilename,
   executeDownloadQueue,
 } from '../services/downloadQueue';
+import { generateTakeExportFilename } from '../services/exportKit';
 
 interface RenderQueueProps {
   shots: Shot[];
@@ -27,8 +27,9 @@ interface RenderQueueProps {
   config: ProjectConfig;
   creditRemaining: number;
   isGeneratingKeyframes: boolean;
-  onUpdateShots: (updatedShots: Shot[]) => void;
+  onUpdateShots: (update: ShotsUpdate) => void;
   onDeductCredits: (amount: number) => void;
+  onRenderingChange?: (delta: number) => void;
 }
 
 export const RenderQueue: React.FC<RenderQueueProps> = ({
@@ -40,6 +41,7 @@ export const RenderQueue: React.FC<RenderQueueProps> = ({
   isGeneratingKeyframes,
   onUpdateShots,
   onDeductCredits,
+  onRenderingChange,
 }) => {
   const [isRendering, setIsRendering] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -53,16 +55,9 @@ export const RenderQueue: React.FC<RenderQueueProps> = ({
     'missing' | 'failed' | 'stale' | 'low_qc' | null
   >(null);
 
-  const [selectedVideoIds, setSelectedVideoIds] = useState<Set<string>>(new Set());
-
   // Download queue state
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgressText, setDownloadProgressText] = useState<string>('');
-  const [downloadSummary, setDownloadSummary] = useState<{
-    downloadedCount: number;
-    total: number;
-    errors: DownloadItem[];
-  } | null>(null);
 
   const stopRequestedRef = useRef(false);
   const pauseRequestedRef = useRef(false);
@@ -96,17 +91,30 @@ export const RenderQueue: React.FC<RenderQueueProps> = ({
   const totalBlobMB = totalBlobSizeBytes / (1024 * 1024);
   const isMemoryWarning = totalBlobMB > 600;
 
-  // Nhóm các shot theo tiêu chí hàng loạt
+  // Nhóm các shot theo tiêu chí hàng loạt (bỏ qua shot đang 'rendering')
   const shotsWithoutVideo = useMemo(() => {
-    return shots.filter((s) => !getActiveTake(s));
+    return shots.filter((s) => !getActiveTake(s) && s.renderStatus !== 'rendering');
   }, [shots]);
 
-  const shotsFailed = useMemo(() => {
-    return shots.filter((s) => s.renderStatus === 'error' && !getActiveTake(s));
+  // Lọc shot lỗi: KHÔNG tự động gửi lại các shot bị timeout (bắt đầu bằng 'TIMEOUT:')
+  const { eligibleFailedShots, timeoutSkippedCount } = useMemo(() => {
+    let skipped = 0;
+    const eligible: Shot[] = [];
+    shots.forEach((s) => {
+      if (s.renderStatus === 'error' && !getActiveTake(s)) {
+        if (s.renderError && s.renderError.startsWith('TIMEOUT:')) {
+          skipped++;
+        } else {
+          eligible.push(s);
+        }
+      }
+    });
+    return { eligibleFailedShots: eligible, timeoutSkippedCount: skipped };
   }, [shots]);
 
   const shotsStale = useMemo(() => {
     return shots.filter((s) => {
+      if (s.renderStatus === 'rendering') return false;
       const take = getActiveTake(s);
       if (!take) return false;
       const kf = getShotKeyframes(s, shots);
@@ -116,6 +124,7 @@ export const RenderQueue: React.FC<RenderQueueProps> = ({
 
   const shotsLowQC = useMemo(() => {
     return shots.filter((s) => {
+      if (s.renderStatus === 'rendering') return false;
       const take = getActiveTake(s);
       return Boolean(take?.qc && take.qc.totalScore < 60);
     });
@@ -130,7 +139,7 @@ export const RenderQueue: React.FC<RenderQueueProps> = ({
   };
 
   const costMissing = calcBatchCost(shotsWithoutVideo);
-  const costFailed = calcBatchCost(shotsFailed);
+  const costFailed = calcBatchCost(eligibleFailedShots);
   const costStale = calcBatchCost(shotsStale);
   const costLowQC = calcBatchCost(shotsLowQC);
 
@@ -141,6 +150,8 @@ export const RenderQueue: React.FC<RenderQueueProps> = ({
   // Render một shot đơn lẻ (thêm take mới)
   const handleRenderSingleTake = async (shot: Shot, useLock = false) => {
     if (isRendering || isGeneratingKeyframes) return;
+    if (shot.renderStatus === 'rendering') return;
+
     const currentKf = getShotKeyframes(shot, shotsRef.current);
     if (!currentKf.isReady && !shot.lock) {
       setGlobalRenderError(`Shot #${shot.order} chưa đủ keyframe đầu/cuối.`);
@@ -157,14 +168,16 @@ export const RenderQueue: React.FC<RenderQueueProps> = ({
     setCurrentRenderingShotId(shot.id);
     setIsRendering(true);
     setRenderProgressText(`Đang quay take mới cho Shot #${shot.order}...`);
+    if (onRenderingChange) onRenderingChange(1);
 
-    let nextShots = shotsRef.current.map((s) =>
-      s.id === shot.id
-        ? { ...s, renderStatus: 'rendering' as const, renderError: undefined }
-        : s
+    // Đặt renderStatus 'rendering' ngay lập tức
+    onUpdateShots((prev) =>
+      prev.map((s) =>
+        s.id === shot.id
+          ? { ...s, renderStatus: 'rendering', renderError: undefined }
+          : s
+      )
     );
-    shotsRef.current = nextShots;
-    onUpdateShots(nextShots);
 
     try {
       const scene = sceneMap.get(shot.sceneId);
@@ -181,42 +194,40 @@ export const RenderQueue: React.FC<RenderQueueProps> = ({
       onDeductCredits(take.creditCost);
       creditRemainingRef.current -= take.creditCost;
 
-      const existingTakes = shot.takes || [];
-      const updatedTakes = [...existingTakes, take];
-
-      nextShots = shotsRef.current.map((s) =>
-        s.id === shot.id
-          ? {
-              ...s,
-              takes: updatedTakes,
-              activeTakeId: take.id,
-              lock,
-              renderStatus: 'done' as const,
-              renderError: undefined,
-            }
-          : s
+      // Cập nhật lấy s từ prev mới nhất, thêm take
+      onUpdateShots((prev) =>
+        prev.map((s) =>
+          s.id === shot.id
+            ? {
+                ...s,
+                takes: [...(s.takes || []), take],
+                activeTakeId: take.id,
+                lock,
+                renderStatus: 'done',
+                renderError: undefined,
+              }
+            : s
+        )
       );
-      shotsRef.current = nextShots;
-      onUpdateShots(nextShots);
-      setSelectedVideoIds((prev) => new Set(prev).add(shot.id));
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      nextShots = shotsRef.current.map((s) =>
-        s.id === shot.id
-          ? { ...s, renderStatus: 'error' as const, renderError: errMsg }
-          : s
+      onUpdateShots((prev) =>
+        prev.map((s) =>
+          s.id === shot.id
+            ? { ...s, renderStatus: 'error', renderError: errMsg }
+            : s
+        )
       );
-      shotsRef.current = nextShots;
-      onUpdateShots(nextShots);
       setGlobalRenderError(errMsg);
     } finally {
       setIsRendering(false);
       setCurrentRenderingShotId(null);
       setRenderProgressText('');
+      if (onRenderingChange) onRenderingChange(-1);
     }
   };
 
-  // Khởi động render hàng loạt với kiểm tra chi phí và xác nhận 2 bước >= 200 cr
+  // Khởi động render hàng loạt
   const handleStartBatchAction = async (
     targetList: Shot[],
     actionType: 'missing' | 'failed' | 'stale' | 'low_qc'
@@ -249,88 +260,105 @@ export const RenderQueue: React.FC<RenderQueueProps> = ({
     setIsRendering(true);
     setIsPaused(false);
     setGlobalRenderError(null);
+    if (onRenderingChange) onRenderingChange(1);
 
     const candidateIds = targetList.map((s) => s.id);
     const totalCount = candidateIds.length;
 
-    for (let i = 0; i < totalCount; i++) {
-      if (stopRequestedRef.current) break;
-
-      while (pauseRequestedRef.current) {
-        await new Promise((r) => setTimeout(r, 400));
+    try {
+      for (let i = 0; i < totalCount; i++) {
         if (stopRequestedRef.current) break;
-      }
-      if (stopRequestedRef.current) break;
 
-      const targetShotId = candidateIds[i];
-      const freshShot = shotsRef.current.find((s) => s.id === targetShotId);
-      if (!freshShot) continue;
+        while (pauseRequestedRef.current) {
+          await new Promise((r) => setTimeout(r, 400));
+          if (stopRequestedRef.current) break;
+        }
+        if (stopRequestedRef.current) break;
 
-      const currentKf = getShotKeyframes(freshShot, shotsRef.current);
-      if (!currentKf.isReady && !freshShot.lock) continue;
+        const targetShotId = candidateIds[i];
+        const freshShot = shotsRef.current.find((s) => s.id === targetShotId);
+        if (!freshShot) continue;
 
-      const eff = getEffectiveShotRenderConfig(freshShot, config);
-      if (eff.cost > creditRemainingRef.current) {
-        setGlobalRenderError(`DỪNG HÀNG ĐỢI: Không đủ credit cho shot #${freshShot.order}.`);
-        break;
-      }
+        // Bỏ qua nếu shot đang 'rendering'
+        if (freshShot.renderStatus === 'rendering') continue;
 
-      setCurrentRenderingShotId(freshShot.id);
-      setRenderProgressText(`Đang render ${i + 1}/${totalCount} (#${freshShot.order})...`);
+        const currentKf = getShotKeyframes(freshShot, shotsRef.current);
+        if (!currentKf.isReady && !freshShot.lock) continue;
 
-      try {
-        const scene = sceneMap.get(freshShot.sceneId);
-        const useLock = Boolean(freshShot.lock);
-
-        const { take, lock } = await renderShotTake({
-          shot: freshShot,
-          scene,
-          characters,
-          config,
-          currentKeyframes: currentKf,
-          useLock,
-          enableQC: true,
-        });
-
-        onDeductCredits(take.creditCost);
-        creditRemainingRef.current -= take.creditCost;
-
-        const updatedTakes = [...(freshShot.takes || []), take];
-        const nextList = shotsRef.current.map((s) =>
-          s.id === freshShot.id
-            ? {
-                ...s,
-                takes: updatedTakes,
-                activeTakeId: take.id,
-                lock,
-                renderStatus: 'done' as const,
-                renderError: undefined,
-              }
-            : s
-        );
-        shotsRef.current = nextList;
-        onUpdateShots(nextList);
-      } catch (err: unknown) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        const nextList = shotsRef.current.map((s) =>
-          s.id === freshShot.id
-            ? { ...s, renderStatus: 'error' as const, renderError: errMsg }
-            : s
-        );
-        shotsRef.current = nextList;
-        onUpdateShots(nextList);
-
-        if (isQuotaOrCreditError(errMsg)) {
-          setGlobalRenderError(`DỪNG HÀNG ĐỢI: Lỗi quota/credit (${errMsg}).`);
+        const eff = getEffectiveShotRenderConfig(freshShot, config);
+        if (eff.cost > creditRemainingRef.current) {
+          setGlobalRenderError(`DỪNG HÀNG ĐỢI: Không đủ credit cho shot #${freshShot.order}.`);
           break;
         }
-      }
-    }
 
-    setIsRendering(false);
-    setIsPaused(false);
-    setCurrentRenderingShotId(null);
-    setRenderProgressText('');
+        setCurrentRenderingShotId(freshShot.id);
+        setRenderProgressText(`Đang render ${i + 1}/${totalCount} (#${freshShot.order})...`);
+
+        // Đặt 'rendering' trước khi bắt đầu gọi
+        onUpdateShots((prev) =>
+          prev.map((s) =>
+            s.id === targetShotId
+              ? { ...s, renderStatus: 'rendering', renderError: undefined }
+              : s
+          )
+        );
+
+        try {
+          const scene = sceneMap.get(freshShot.sceneId);
+          // Shot lệch mạch gọi useLock=false để tạo lock mới với keyframe đã sửa
+          const useLock = actionType === 'stale' ? false : Boolean(freshShot.lock);
+
+          const { take, lock } = await renderShotTake({
+            shot: freshShot,
+            scene,
+            characters,
+            config,
+            currentKeyframes: currentKf,
+            useLock,
+            enableQC: true,
+          });
+
+          onDeductCredits(take.creditCost);
+          creditRemainingRef.current -= take.creditCost;
+
+          // Cập nhật mảng từ prev mới nhất
+          onUpdateShots((prev) =>
+            prev.map((s) =>
+              s.id === targetShotId
+                ? {
+                    ...s,
+                    takes: [...(s.takes || []), take],
+                    activeTakeId: take.id,
+                    lock,
+                    renderStatus: 'done',
+                    renderError: undefined,
+                  }
+                : s
+            )
+          );
+        } catch (err: unknown) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          onUpdateShots((prev) =>
+            prev.map((s) =>
+              s.id === targetShotId
+                ? { ...s, renderStatus: 'error', renderError: errMsg }
+                : s
+            )
+          );
+
+          if (isQuotaOrCreditError(errMsg)) {
+            setGlobalRenderError(`DỪNG HÀNG ĐỢI: Lỗi quota/credit (${errMsg}).`);
+            break;
+          }
+        }
+      }
+    } finally {
+      setIsRendering(false);
+      setIsPaused(false);
+      setCurrentRenderingShotId(null);
+      setRenderProgressText('');
+      if (onRenderingChange) onRenderingChange(-1);
+    }
   };
 
   const handlePauseToggle = () => {
@@ -351,33 +379,38 @@ export const RenderQueue: React.FC<RenderQueueProps> = ({
 
   // Chọn take active
   const handleSelectActiveTake = (shotId: string, takeId: string) => {
-    const nextShots = shots.map((s) =>
-      s.id === shotId ? { ...s, activeTakeId: takeId } : s
+    onUpdateShots((prev) =>
+      prev.map((s) => (s.id === shotId ? { ...s, activeTakeId: takeId } : s))
     );
-    shotsRef.current = nextShots;
-    onUpdateShots(nextShots);
   };
 
-  // Tải file qua downloadQueue
+  // Tải file qua downloadQueue dùng tên file generateTakeExportFilename khớp concat_list
   const handleStartDownload = async (targetShotIds: string[]) => {
     if (targetShotIds.length === 0 || isDownloading) return;
 
     cancelDownloadRef.current = false;
     setIsDownloading(true);
-    setDownloadSummary(null);
 
     const items: DownloadItem[] = [];
 
     targetShotIds.forEach((id) => {
       const sh = shots.find((s) => s.id === id);
       const activeTake = sh ? getActiveTake(sh) : undefined;
+      const sc = sh ? sceneMap.get(sh.sceneId) : undefined;
       if (sh && activeTake && activeTake.blobUrl) {
-        const filename = generateVideoFilename(
-          sh.order,
-          sh.actionBeat,
-          activeTake.model,
-          activeTake.durationSeconds
-        );
+        const takeIdx = (sh.takes && activeTake)
+          ? Math.max(1, sh.takes.findIndex((t) => t.id === activeTake.id) + 1)
+          : 1;
+
+        // Dùng generateTakeExportFilename khớp với concat_list.txt
+        const filename = generateTakeExportFilename({
+          projectTitle: config.mode === 'long' ? 'long_form_ai_studio' : 'short_ai_studio',
+          order: sh.order,
+          sceneTitle: sc?.title || 'Scene',
+          actionBeat: sh.actionBeat || 'shot',
+          takeIndex: takeIdx,
+        });
+
         items.push({
           id: sh.id,
           filename,
@@ -389,7 +422,7 @@ export const RenderQueue: React.FC<RenderQueueProps> = ({
       }
     });
 
-    const result = await executeDownloadQueue(
+    await executeDownloadQueue(
       items,
       (status) => {
         if (status.currentItem) {
@@ -404,11 +437,6 @@ export const RenderQueue: React.FC<RenderQueueProps> = ({
 
     setIsDownloading(false);
     setDownloadProgressText('');
-    setDownloadSummary({
-      downloadedCount: result.downloadedCount,
-      total: items.length,
-      errors: result.errors,
-    });
   };
 
   return (
@@ -440,7 +468,7 @@ export const RenderQueue: React.FC<RenderQueueProps> = ({
           {/* Nút 1: Chưa có video */}
           <button
             type="button"
-            disabled={shotsWithoutVideo.length === 0 || isRendering}
+            disabled={shotsWithoutVideo.length === 0 || isRendering || isGeneratingKeyframes}
             onClick={() => handleStartBatchAction(shotsWithoutVideo, 'missing')}
             className={`p-2 rounded border text-left transition ${
               batchActionType === 'missing' && confirmBatchRender
@@ -457,11 +485,11 @@ export const RenderQueue: React.FC<RenderQueueProps> = ({
             </div>
           </button>
 
-          {/* Nút 2: Shot lỗi */}
+          {/* Nút 2: Shot lỗi (bỏ qua timeout) */}
           <button
             type="button"
-            disabled={shotsFailed.length === 0 || isRendering}
-            onClick={() => handleStartBatchAction(shotsFailed, 'failed')}
+            disabled={eligibleFailedShots.length === 0 || isRendering || isGeneratingKeyframes}
+            onClick={() => handleStartBatchAction(eligibleFailedShots, 'failed')}
             className={`p-2 rounded border text-left transition ${
               batchActionType === 'failed' && confirmBatchRender
                 ? 'bg-red-600 text-white border-red-500 animate-pulse font-bold'
@@ -470,17 +498,17 @@ export const RenderQueue: React.FC<RenderQueueProps> = ({
           >
             <div className="text-[10px] text-slate-400 uppercase">Render lại shot lỗi</div>
             <div className="text-sm font-bold text-red-400 mt-0.5">
-              {shotsFailed.length} shots • {costFailed} cr
+              {eligibleFailedShots.length} shots • {costFailed} cr
             </div>
             <div className="text-[9px] text-slate-500">
-              {confirmBatchRender && batchActionType === 'failed' ? 'Click xác nhận ≥200 cr' : 'Thử lại các shot báo error'}
+              {timeoutSkippedCount > 0 ? `Bỏ qua ${timeoutSkippedCount} shot TIMEOUT` : confirmBatchRender && batchActionType === 'failed' ? 'Click xác nhận ≥200 cr' : 'Thử lại các shot báo error'}
             </div>
           </button>
 
           {/* Nút 3: Shot lệch mạch */}
           <button
             type="button"
-            disabled={shotsStale.length === 0 || isRendering}
+            disabled={shotsStale.length === 0 || isRendering || isGeneratingKeyframes}
             onClick={() => handleStartBatchAction(shotsStale, 'stale')}
             className={`p-2 rounded border text-left transition ${
               batchActionType === 'stale' && confirmBatchRender
@@ -500,7 +528,7 @@ export const RenderQueue: React.FC<RenderQueueProps> = ({
           {/* Nút 4: Điểm QC thấp < 60 */}
           <button
             type="button"
-            disabled={shotsLowQC.length === 0 || isRendering}
+            disabled={shotsLowQC.length === 0 || isRendering || isGeneratingKeyframes}
             onClick={() => handleStartBatchAction(shotsLowQC, 'low_qc')}
             className={`p-2 rounded border text-left transition ${
               batchActionType === 'low_qc' && confirmBatchRender
@@ -565,7 +593,7 @@ export const RenderQueue: React.FC<RenderQueueProps> = ({
         )}
       </div>
 
-      {/* BẢNG RENDER QUEUE GỌN (#, thumb, hành động, model, QC/status, các take chip, nút quay take) */}
+      {/* BẢNG RENDER QUEUE GỌN */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         <div className="rounded-xl bg-[#141414] border border-[#595959]/50 overflow-hidden shadow">
           <div className="bg-[#1c1c1c] border-b border-[#595959]/40 px-3 py-2 flex items-center justify-between">
@@ -596,7 +624,7 @@ export const RenderQueue: React.FC<RenderQueueProps> = ({
                   const eff = getEffectiveShotRenderConfig(shot, config);
                   const currentKf = getShotKeyframes(shot, shots);
                   const isStale = activeTake ? checkTakeStaleness(activeTake, currentKf) : false;
-                  const isCurrentRendering = currentRenderingShotId === shot.id;
+                  const isCurrentRendering = currentRenderingShotId === shot.id || shot.renderStatus === 'rendering';
 
                   let qcBadgeClass = 'bg-[#6b6b75]/20 text-slate-400 border-slate-600';
                   let qcText = 'Chưa QC';
@@ -651,6 +679,11 @@ export const RenderQueue: React.FC<RenderQueueProps> = ({
                             ⚠ Keyframe đã đổi — clip không còn khớp mạch
                           </div>
                         )}
+                        {shot.renderError && (
+                          <div className="text-[10px] text-red-400 font-mono mt-0.5 truncate max-w-sm" title={shot.renderError}>
+                            Lỗi: {shot.renderError}
+                          </div>
+                        )}
                       </td>
 
                       {/* Model override */}
@@ -690,7 +723,7 @@ export const RenderQueue: React.FC<RenderQueueProps> = ({
                             </span>
                           </div>
                         ) : shot.renderStatus === 'error' ? (
-                          <span className="px-1.5 py-0.2 rounded bg-red-950 text-red-300 border border-red-500/40 text-[10px]">
+                          <span className="px-1.5 py-0.2 rounded bg-red-950 text-red-300 border border-red-500/40 text-[10px]" title={shot.renderError}>
                             Lỗi
                           </span>
                         ) : (
@@ -726,13 +759,14 @@ export const RenderQueue: React.FC<RenderQueueProps> = ({
                         </div>
                       </td>
 
-                      {/* Nút Quay take mới (x cr) */}
+                      {/* Nút Quay take mới */}
                       <td className="py-2.5 px-3 text-right">
                         <button
                           type="button"
-                          disabled={isRendering || (!currentKf.isReady && !shot.lock)}
+                          disabled={isRendering || isGeneratingKeyframes || shot.renderStatus === 'rendering' || (!currentKf.isReady && !shot.lock)}
                           onClick={() => handleRenderSingleTake(shot, Boolean(shot.lock))}
                           className="px-2.5 py-1 rounded bg-[#222] hover:bg-[#2c2c34] text-amber-300 border border-amber-500/40 text-[10px] font-semibold transition disabled:opacity-30 inline-flex items-center gap-1"
+                          title={shot.renderStatus === 'rendering' ? 'Shot đang render' : isGeneratingKeyframes ? 'Đang sinh keyframe hàng loạt' : undefined}
                         >
                           <span className="material-symbols-outlined text-[13px]">videocam</span>
                           <span>Quay ({eff.cost} cr)</span>

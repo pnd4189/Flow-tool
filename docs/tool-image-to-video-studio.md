@@ -40,3 +40,10 @@ Veo; 720p; clip 8/10 s; 9:16 kèm cắt + `Flow.upload`; nhiều biến thể m�
 | `prompt-v1a`…`v1c`, `v2` | Tab Video Studio; 2 tính năng AI dùng `Flow.generate.text` |
 | `prompt-d1` | Làm lại tải xuống cho ảnh và video (một hàng đợi chung) |
 | `prompt-s1`, `s2` | Chế độ tự chọn ảnh làm video |
+| `prompt-f1-safety`, `f1b-syntax` | Tự xử lý ảnh bị chặn vì chính sách; sửa 1 dòng ternary builder làm hỏng |
+
+## Ảnh bị chặn vì chính sách — sửa 2026-10-31
+
+- Nguyên nhân đo thật: Flow trả "Lượt tạo này có thể vi phạm các chính sách của chúng tôi…", tool cũ không nhận ra câu tiếng Việt này. Tool còn nối nguyên dòng `Negative:` ("no nudity…, no graphic gore or blood…, no celebrity face…") thành `Avoid:` vào prompt. Lô 8 cảnh của KTT_T04 lỗi 4 cảnh; bỏ `Avoid:` thì cả 5 cảnh nghi bị chặn đều tạo được. Thử lại hay đổi model đều gửi y nguyên prompt nên vẫn bị chặn.
+- Cách sửa (`services/safety.ts`): lọc bỏ mục nhạy cảm khỏi negative; nếu vẫn bị chặn thì lần lượt thử bỏ hẳn `Avoid:`, rồi AI viết lại prompt (tối đa 2 lần, lần 2 dè dặt hơn), sau đó mới báo lỗi. Thẻ ảnh có nhãn "AI đã chỉnh prompt" và nút "Khôi phục prompt gốc". Retry/tạo lại dùng prompt mới nhất trong state.
+- Đã chạy thật: 16 cảnh đầu KTT_T04 kèm nguyên dòng Negative → 16/16 thành công; cảnh 014 qua ở bước bỏ `Avoid:`. Bước AI viết lại chưa được kích hoạt thật (prompt thử nặng tay vẫn không bị chặn), mới kiểm bằng đọc code.

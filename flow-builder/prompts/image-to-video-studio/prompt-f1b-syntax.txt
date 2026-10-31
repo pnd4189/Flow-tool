@@ -1,0 +1,1 @@
+Sửa đúng 1 dòng trong App.tsx, KHÔNG đổi gì khác: trong tiêu đề h1 của tab (khoảng dòng 932-934), ngay sau dòng `: activeTab === 'batch'` có dòng `: 'Batch Processing'` bị sai dấu, phải là `? 'Batch Processing'` (toán tử ba ngôi đang có hai dấu hai chấm liền nhau gây lỗi cú pháp). Chỉ sửa ký tự ':' thành '?' ở dòng đó.

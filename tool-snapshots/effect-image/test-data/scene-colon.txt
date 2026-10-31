@@ -1,0 +1,9 @@
+SCENE 1:
+Camera: wide shot of a fox
+
+Style: 2D anime
+
+SCENE 2:
+Camera: close shot of a whale
+
+Style: 2D anime

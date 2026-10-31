@@ -1,0 +1,31 @@
+SỬA LỖI NẶNG: render hàng loạt tốn credit trùng và ghi đè làm mất take/chỉnh sửa. CHỈ sửa đúng các chỗ nêu, KHÔNG viết lại file, giữ nguyên mọi tính năng khác. Không dùng window.confirm/alert/prompt, không localStorage.
+
+Nguyên nhân (đã đọc code):
+(a) App.tsx chỉ dựng RenderQueue/StoryboardGrid khi đang ở đúng bước (`currentStep === 'render' && ...`). Rời bước khi đang chạy lô thì vòng lặp vẫn chạy nhưng mất nút Dừng; quay lại thì "Render missing" gửi lại chính các shot đó.
+(b) Các component ghi lại cả mảng shots từ bản chụp cũ (onUpdateShots(nextList), StoryboardGrid `let currentShots = [...shotsRef.current]` rồi `onUpdateShots(currentShots)`, ShotInspector `onUpdate({...shot, ...})`) nên xoá take/chỉnh sửa làm trong lúc chờ.
+(c) Shot đã render có lock nên "Render lại lệch mạch" dùng keyframe cũ trong lock.
+(d) ShotInspector render không kiểm tra/trừ credit, không đặt renderStatus 'rendering'.
+
+1. App.tsx
+- Đổi handleUpdateShotsOnly thành nhận `Shot[] | ((prev: Shot[]) => Shot[])` và gọi thẳng setShots(update); kiểu prop onUpdateShots ở mọi component đổi theo (type ShotsUpdate trong services/types.ts).
+- Bước 4 và 5: khi shots.length > 0 luôn dựng StoryboardGrid và RenderQueue, chỉ ẩn bằng class 'hidden' khi không ở bước đó (giống cách ScriptEngine đang làm). Màn "Chưa có shot" giữ như cũ.
+- Thêm state isGeneratingKeyframes; StoryboardGrid nhận prop onGeneratingChange(b: boolean) gọi khi bắt đầu/kết thúc lô keyframe; truyền isGeneratingKeyframes thật cho RenderQueue (thay `isGeneratingKeyframes={false}`).
+- Thêm state rendersInFlight (số job video đang chạy) với callback onRenderingChange(delta); khi > 0 hiện ở AppHeader/StepNav một nhãn nhỏ "Đang render…" để người dùng biết, ở mọi bước.
+- ShotInspector: onUpdate đổi thành onPatchShot(id, patch: Partial<Shot> | ((s: Shot) => Shot)) dùng setShots(prev => prev.map(...)); truyền thêm creditRemaining={currentRemaining}, onDeductCredits={handleDeductCredits}, isGeneratingKeyframes, onRenderingChange.
+
+2. Ghi theo từng shot từ state mới nhất (mọi chỗ trong RenderQueue, StoryboardGrid, ShotInspector, ExportStep):
+- Dùng onUpdateShots(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s)). Thêm take: `{ ...s, takes: [...(s.takes || []), take], activeTakeId: take.id, lock, renderStatus: 'done', renderError: undefined }` dựa trên `s` của prev, không dựa trên bản chụp freshShot.
+- StoryboardGrid lô keyframe: mỗi keyframe xong gọi onUpdateShots(prev => applyKeyframeToShots(prev, slot, kf)); slot kế tiếp tính từ shotsRef.current mới nhất, không từ currentShots chụp lúc bắt đầu.
+- ShotInspector (render, tạo lại keyframe đầu/cuối, QC lại): dùng onPatchShot với hàm cập nhật để không ghi đè trường khác; bấm tạo lại khung đầu rồi khung cuối liên tiếp không được mất khung đầu.
+
+3. Chống render trùng và tốn credit:
+- Trước khi gọi video cho một shot (lô hay đơn, RenderQueue hay ShotInspector): bỏ qua/không cho bấm nếu shot đang renderStatus === 'rendering'; đặt renderStatus 'rendering' ngay trước khi gọi; kiểm tra credit còn lại; sau khi xong trừ credit qua onDeductCredits. Nút render trong ShotInspector bị vô hiệu khi đang render/khi đang tạo keyframe hàng loạt, có lý do hiển thị.
+- RenderQueue lô: bỏ qua shot đang 'rendering'.
+
+4. services/renderService.ts:
+- renderShotTake: chỉ dùng lock khi useLock && shot.lock && shot.lock.firstFrameMediaId === currentKeyframes.firstFrameMediaId && shot.lock.lastFrameMediaId === currentKeyframes.lastFrameMediaId. Nếu keyframe đã đổi thì dùng prompt biên dịch lại + keyframe hiện tại + cấu hình hiệu lực, và trả về lock MỚI. Nút "Render lại lệch mạch / Khớp keyframe vừa sửa" luôn gọi với useLock=false.
+- Timeout: chỉ tính thời gian chờ Flow.generate.video (QC chạy sau, không nằm trong timeout); tăng lên 900 giây. Khi quá thời gian: ném lỗi có tiền tố 'TIMEOUT:' và message "Quá 15 phút chưa nhận được video; có thể Flow vẫn tạo xong và đã trừ credit. Kiểm tra thư viện Flow (Nạp lại từ thư viện) trước khi render lại." Shot lưu renderError đó; nút lô "Render lỗi" KHÔNG gửi lại các shot có lỗi bắt đầu 'TIMEOUT:' (hiện số lượng bị bỏ qua và lý do); vẫn render lại được từng shot bằng tay.
+- isQuotaOrCreditError thêm: 'hạn mức', 'không đủ', 'hết credit', 'tín dụng', 'số dư'. isSafetyOrPolicyError thêm: 'vi phạm', 'chính sách', 'không an toàn', 'sensitive', 'prohibited'.
+- Bị chặn vì chính sách khi render: gọi Flow.generate.text (thinkingLevel 'low', timeout 60s) viết lại prompt video cho an toàn, giữ nhân vật/bối cảnh/hành động, làm mềm phần bạo lực/nhạy cảm, bỏ tên người thật, chỉ trả về prompt tiếng Anh; thử lại ĐÚNG 1 lần với prompt mới. Vẫn bị chặn thì lỗi cuối "Bị chặn vì chính sách sau khi AI chỉnh prompt; sửa hành động/lời thoại của shot rồi render lại". Lỗi quota vẫn dừng cả lô như cũ.
+
+KIỂM TRA: build không lỗi; đang render lô mà chuyển sang bước khác rồi quay lại thì vẫn thấy tiến trình và nút Dừng; trong lúc lô keyframe chạy, đổi chain/cut trên timeline không bị hoàn tác; RenderQueue và ShotInspector không gửi video cho shot đang 'rendering'.

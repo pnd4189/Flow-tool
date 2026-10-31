@@ -1,0 +1,9 @@
+SỬA NHỎ trong services/faceSlimService.ts (applyFaceSlim) và 1 câu mô tả trong components/QuickFixPanel.tsx. KHÔNG đổi gì khác, KHÔNG xoá chú thích.
+
+Đo trên ảnh 2 người sát nhau: mặt người bên cạnh giữ nguyên, nhưng TAI của họ vẫn bị kéo giãn ~10px vì leftX/rightX của AI không tính tai.
+
+1. Khi tính room, nới mép mặt khác thêm phần tai/tóc: với ow = o.rightX - o.leftX, dùng (o.leftX - 0.2*ow) thay cho o.leftX ở bên phải, và (o.rightX + 0.2*ow) thay cho o.rightX ở bên trái. Điều kiện chọn mặt (o.leftX > cx / o.rightX < cx) giữ nguyên.
+2. Giữ mặt cân đối: nếu một bên bị bỏ qua (skipLeft hoặc skipRight) thì KHÔNG nắn mặt này (bỏ qua cả hai bên, trả nguyên ảnh nguồn), skippedSides = 2, thêm trường skippedFace: true vào FaceSlimResult (mặc định false).
+3. QuickFixPanel: thay câu " Bỏ qua ${n} bên má vì sát mặt người khác." bằng đếm số mặt có skippedFace: " Bỏ qua ${k} mặt vì sát mặt người khác (tránh làm lệch mặt và chạm người bên cạnh)." Nếu TẤT CẢ mặt cần xử lý đều bị bỏ qua thì báo lỗi "Không thể gọn mặt an toàn: mặt quá sát người khác. Hãy khoanh vùng thủ công." thay vì tạo bản xem trước không đổi.
+
+KIỂM TRA: build không lỗi; ảnh 1 người kết quả không đổi; ảnh 2 người sát nhau: tai và mặt người bên cạnh không đổi pixel nào.

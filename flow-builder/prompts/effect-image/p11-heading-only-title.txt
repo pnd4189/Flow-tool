@@ -1,0 +1,7 @@
+SỬA NHỎ trong services/promptParser.ts, hàm parsePromptText (đoạn drafts.forEach tạo items). CHỈ sửa file này, KHÔNG đổi gì khác.
+
+Lỗi đo được: file bắt đầu bằng 1 dòng tiêu đề tài liệu "# My prompts" rồi các đoạn prompt → ra 3 prompt, trong đó "My prompts" thành 1 prompt riêng (tạo ra ảnh thừa).
+
+Sửa: draft chỉ có tiêu đề (textParts rỗng, chỉ có titleHint) thì BỎ QUA, nếu trong file có ít nhất một draft khác có textParts không rỗng. Nếu MỌI draft đều chỉ có tiêu đề (file liệt kê prompt bằng các dòng tiêu đề) thì giữ như hiện tại (dùng titleHint làm prompt).
+
+KIỂM TRA: "# My prompts" + 2 đoạn prompt → 2 prompt; "## Scene 1 / nội dung / ## Scene 2 / nội dung" vẫn 2 prompt; file chỉ gồm các dòng "# prompt" vẫn ra đủ số dòng; file KTT "--- SCENE 001 ---" vẫn đúng 120.

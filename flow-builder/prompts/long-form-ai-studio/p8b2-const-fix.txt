@@ -1,0 +1,1 @@
+Sửa đúng 1 dòng trong services/scriptImport.ts, KHÔNG đổi gì khác: dòng 680 `assignedCharIds = [characters[0].id];` gây lỗi build "Cannot assign to assignedCharIds because it is a constant". Đổi thành `assignedCharIds.push(characters[0].id);`.

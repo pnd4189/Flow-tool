@@ -1,0 +1,8 @@
+SỬA LỖI trong services/faceSlimService.ts (applyFaceSlim) và components/RightSidebar.tsx (nhánh op 'face_slim'). KHÔNG đổi gì khác, KHÔNG xoá chú thích.
+
+Lỗi: nhánh "if (skipLeft || skipRight) return {...}" trả outputCanvas TRƯỚC khi gọi outCtx.putImageData, nên canvas kết quả trống (trong suốt). Đã đo: mặt bị bỏ qua → ảnh ra toàn pixel 0. Đường gõ prompt (RightSidebar) dùng thẳng slimRes.outputCanvas nên sẽ ra ảnh trống.
+
+1. faceSlimService.ts: trong nhánh bỏ qua đó, gọi outCtx.putImageData(outImgData, 0, 0) trước khi return (outImgData đã chứa bản sao nguồn).
+2. RightSidebar.tsx nhánh face_slim: nếu slimRes.skippedFace thì KHÔNG đổi runningCanvas và push mô tả "Bỏ qua gọn mặt: mặt quá sát người khác (giữ nguyên để an toàn)"; ngược lại giữ như cũ.
+
+KIỂM TRA: build không lỗi; mặt bị bỏ qua thì ảnh kết quả giống hệt ảnh gốc.

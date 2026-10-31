@@ -70,7 +70,7 @@ interface ActiveDraft {
 }
 
 const EXPLICIT_MARKER_REGEX =
-  /^(?:prompt\s*(?:#|\b)?\d+|ảnh\s*(?:#|\b)?\d+|hình\s*(?:#|\b)?\d+|image\s*(?:#|\b)?\d+|scene\s*(?:#|\b)?\d+|cảnh\s*(?:#|\b)?\d+|---\s*scene\s*\d+\s*---|\[\d+\]|#\d+)[:\-\s]/i;
+  /^(?:prompt\s*(?:#|\b)?\d+|ảnh\s*(?:#|\b)?\d+|hình\s*(?:#|\b)?\d+|image\s*(?:#|\b)?\d+|scene\s*(?:#|\b)?\d+|cảnh\s*(?:#|\b)?\d+|---\s*scene\s*\d+\s*---|\[\d+\]|#\d+)(?:[:\-\s]|$)/i;
 
 const NUMBERED_LIST_REGEX = /^\s*(\d+)(?:\.|\)|\s+-|\/)\s+/;
 const NUMBERED_PAREN_REGEX = /^\s*\(\d+\)\s+/;
@@ -213,6 +213,13 @@ export async function parsePromptTextAsync(
   };
 
   const chunkSizeLines = 60;
+  const isHeaderOnlyLine = (t: string): boolean => {
+    if (MD_HEADER_REGEX.test(t)) return true;
+    const m = t.match(EXPLICIT_MARKER_REGEX);
+    return !!m && t.slice(m[0].length).trim() === '';
+  };
+  const headerBlocks = allLines.filter((l) => isHeaderOnlyLine(l.trim())).length >= 2;
+  let draftOwnedByHeader = false;
 
   for (let i = 0; i < totalLines; i++) {
     if (i > 0 && i % chunkSizeLines === 0) {
@@ -281,7 +288,7 @@ export async function parsePromptTextAsync(
       encounteredFeatures.add('Marker (Prompt/Ảnh)');
       const match = trimmed.match(EXPLICIT_MARKER_REGEX);
       if (match) {
-        titleHint = match[0].replace(/[:\-\s]+$/, '').trim();
+        titleHint = match[0].replace(/^[-\s]+|[:\-\s]+$/g, '').trim();
         lineContent = trimmed.slice(match[0].length).trim();
       }
     } else if (NUMBERED_LIST_REGEX.test(trimmed)) {
@@ -308,12 +315,13 @@ export async function parsePromptTextAsync(
         titleHint = match[1].trim();
         lineContent = '';
       }
-    } else if (prevLineWasBlankOrHr && currentDraft) {
+    } else if (prevLineWasBlankOrHr && currentDraft && !(headerBlocks && draftOwnedByHeader)) {
       isBoundary = true;
       encounteredFeatures.add('Đoạn văn');
     }
 
     if (isBoundary || !currentDraft) {
+      draftOwnedByHeader = headerBlocks && isHeaderOnlyLine(trimmed);
       startNewDraft(titleHint, lineContent, rawLine);
     } else {
       if (lineContent) {
@@ -330,10 +338,17 @@ export async function parsePromptTextAsync(
   }
 
   const items: PromptItem[] = [];
+  const hasAnyDraftWithBody = drafts.some((d) => d.textParts.join(' ').trim().length > 0);
+
   drafts.forEach((d) => {
     let combinedText = d.textParts.join(' ').trim();
-    if (!combinedText && d.titleHint) {
-      combinedText = d.titleHint;
+    if (!combinedText) {
+      if (hasAnyDraftWithBody) {
+        return;
+      }
+      if (d.titleHint) {
+        combinedText = d.titleHint;
+      }
     }
     if (!combinedText) return;
 
@@ -457,7 +472,7 @@ export function parsePromptText(rawInput: string, defaultRatio: SupportedAspectR
       encounteredFeatures.add('Marker');
       const match = trimmed.match(EXPLICIT_MARKER_REGEX);
       if (match) {
-        titleHint = match[0].replace(/[:\-\s]+$/, '').trim();
+        titleHint = match[0].replace(/^[-\s]+|[:\-\s]+$/g, '').trim();
         lineContent = trimmed.slice(match[0].length).trim();
       }
     } else if (NUMBERED_LIST_REGEX.test(trimmed)) {
@@ -484,8 +499,18 @@ export function parsePromptText(rawInput: string, defaultRatio: SupportedAspectR
   if (currentDraft) drafts.push(currentDraft);
 
   const items: PromptItem[] = [];
+  const hasAnyDraftWithBody = drafts.some((d) => d.textParts.join(' ').trim().length > 0);
+
   drafts.forEach((d) => {
-    const combinedText = d.textParts.join(' ').trim() || d.titleHint || '';
+    let combinedText = d.textParts.join(' ').trim();
+    if (!combinedText) {
+      if (hasAnyDraftWithBody) {
+        return;
+      }
+      if (d.titleHint) {
+        combinedText = d.titleHint;
+      }
+    }
     if (!combinedText) return;
     const { cleanedPrompt, aspectRatio, negative, warnings } = extractParametersAndClean(combinedText, d.aspectRatio || defaultRatio);
     items.push({

@@ -1,0 +1,27 @@
+THÊM: bộ định tuyến yêu cầu — gõ yêu cầu ở chế độ "Chỉnh theo prompt" thì tool tự chọn thuật toán có sẵn, chỉ ca khó mới gửi AI sửa ảnh. Tạo file mới services/requestRouter.ts; trong RightSidebar chỉ sửa đúng chỗ hàm thực hiện chọn đường đi. KHÔNG viết lại file, giữ nguyên mọi tính năng. Không dùng window.confirm/alert/prompt, không localStorage.
+
+1. services/requestRouter.ts:
+- type RoutedOp =
+  | { op: 'face_slim', strength: number }        // 3..15
+  | { op: 'body_slim', strength: number }        // 5..30
+  | { op: 'auto_enhance' }
+  | { op: 'color', params: Partial<ColorAdjustmentParams> }
+  | { op: 'blur_background', radius: number }
+  | { op: 'remove_background' }
+  | { op: 'ai_edit', reason: string };
+- routeByRules(text): RoutedOp[] | null — dò chữ thường, bỏ dấu để so (vẫn giữ bản có dấu cho regex tiếng Việt). Lấy số "N%" nếu có làm cường độ.
+  * Mặt: (mặt|má|cằm|hàm|face|cheek|jaw|chin) cùng (gọn|thon|nhỏ|bớt béo|đỡ béo|v-?line|slim|thin) → face_slim (mặc định 8).
+  * Thân: (bụng|eo|thân|người|body|waist|belly|tummy) cùng (gọn|thon|bớt béo|đỡ béo|slim|thin) → body_slim (mặc định 15).
+  * Đẹp tổng thể: (tự động|làm đẹp|đẹp hơn|chỉnh màu tự động|auto enhance|cân bằng) → auto_enhance.
+  * Màu/ánh sáng: sáng hơn → exposure +20; tối hơn → exposure -20; tương phản/rõ hơn → contrast +20; ấm hơn → temperature +20; lạnh hơn → temperature -20; rực/tươi màu → saturation +20; nhạt màu → saturation -20; nét hơn → sharpen 30; giảm nhiễu/mịn ảnh → denoise 30 (gộp nhiều ý thành 1 op 'color').
+  * Nền: (mờ|xoá phông|xóa phông|bokeh) cùng (nền|phông|hậu cảnh|background) → blur_background radius 14; (tách nền|xoá nền|xóa nền|remove background|nền trong suốt) → remove_background.
+  Một câu có nhiều ý thì trả nhiều op theo thứ tự trên. Không khớp gì thì null.
+- routeWithAI(text): Promise<RoutedOp[]> — khi routeByRules trả null, gọi Flow.generate.text (thinkingLevel 'low', timeout 30s) yêu cầu CHỈ trả JSON mảng op đúng các kiểu trên (giải thích ngắn danh sách op và tham số cho model). Nếu yêu cầu cần vẽ thêm/xoá/thay vật, sửa chi tiết phức tạp thì trả [{ "op": "ai_edit", "reason": "..." }]. JSON hỏng hoặc lỗi → [{ op: 'ai_edit', reason: 'không phân loại được' }]. Kiểm tra/kẹp mọi tham số.
+
+2. RightSidebar, hàm thực hiện khi aiMode === 'prompt_edit':
+- ops = routeByRules(userPrompt) ?? await routeWithAI(userPrompt). Hiện dòng trạng thái "Sẽ dùng: <tên thuật toán…>" trước khi chạy.
+- Chạy lần lượt các op cục bộ bằng đúng hàm của QuickFixPanel/services (applyFaceSlim + detectFaceContours, applyLocalWaistSlimming với vùng chọn hoặc khung thân tự dựng, autoEnhance, processColorAndQuality, previewBlurBackground, previewRemoveBackground), mỗi op lấy kết quả op trước làm đầu vào, cuối cùng ra MỘT bản xem trước có mô tả liệt kê các bước đã làm. Op màu/nền/thân/tự động luôn dùng lớp bảo vệ mặt (ensureFaceProtectionPreflight); chỉ face_slim được đổi viền má/hàm theo quy tắc lõi giữ nguyên.
+- Chỉ khi có op 'ai_edit' mới chạy đường AI hiện có (ROUTE B) với khoá mặt bật bắt buộc; ghi rõ trong mô tả "Dùng AI vì: <reason>".
+- SLIM_REQUEST_REGEX cũ không còn quyết định đường đi (bộ định tuyến thay thế), giữ phần lấy N% nếu có.
+
+KIỂM TRA: build không lỗi; "làm mặt gọn hơn 10%" → gọn mặt 10%, không gọi AI sửa ảnh; "bụng gọn lại, ảnh sáng hơn" → thân 15% rồi exposure +20 trong 1 bản xem trước; "xoá cái cột điện phía sau" → đi đường AI với khoá mặt.

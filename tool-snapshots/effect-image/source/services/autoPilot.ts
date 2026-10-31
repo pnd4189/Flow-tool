@@ -652,7 +652,7 @@ export class AutoPilotPipeline {
 
   /**
    * Sửa autoRetryRecentFailedItems (Đợt 7B):
-   * Mục đã có ảnh (q.variants.length > 0) thì chuyển sang 'queued_effect' (không để 'waiting' tránh pumpGenerators sinh lại ảnh)
+   * Mục đã có ảnh (q.variants.length > 0) thì chuyển sang 'directing'
    * và đẩy vào effectQueue.
    */
   private autoRetryRecentFailedItems(): void {
@@ -663,7 +663,6 @@ export class AutoPilotPipeline {
         p.error = undefined;
         p.errorStage = undefined;
         if (q.variants.length > 0) {
-          // Mục đã có ảnh: dùng trạng thái trung gian, enqueue effect trực tiếp
           p.stage = 'directing';
           this.scheduleBatchedUpdate(q.id);
           this.enqueueEffect(q.id);
@@ -903,6 +902,8 @@ export class AutoPilotPipeline {
       const maxRetries = 3;
       let success = false;
       let safetyRewritten = false;
+      let originalPromptBeforeSafety: string | undefined = undefined;
+      let safetyRounds = 0;
 
       while (attempt <= maxRetries && !success) {
         if (this.isStopped) return;
@@ -946,6 +947,8 @@ export class AutoPilotPipeline {
           qItem.status = 'done';
           qItem.sentPrompt = finalPrompt;
           qItem.translatedPrompt = translatedPrompt;
+          qItem.safetyRewritten = safetyRewritten;
+          qItem.originalPromptBeforeSafety = originalPromptBeforeSafety;
 
           progress.thumbnailUrl = thumb.dataUrl;
           progress.blobUrl = blobUrl;
@@ -1022,7 +1025,6 @@ export class AutoPilotPipeline {
 
           this.enqueueEffect(id);
         } catch (err: any) {
-          attempt++;
           const errMsg = err?.message || String(err);
           const isRateLimit = isTemporaryError(errMsg) && (errMsg.includes('rate limit') || errMsg.includes('busy') || errMsg.includes('quá tải'));
           const isSafety = isSafetyPolicyError(errMsg);
@@ -1065,15 +1067,43 @@ export class AutoPilotPipeline {
             return;
           }
 
-          if (isSafety && !safetyRewritten) {
-            try {
-              finalPrompt = await rewritePromptForSafety(finalPrompt);
-              safetyRewritten = true;
-              continue;
-            } catch {
-              // bỏ qua
+          // Xử lý chặn an toàn (Safety Policy): hỗ trợ 2 vòng viết lại, không tính vào attempt lỗi tạm thời
+          if (isSafety) {
+            if (safetyRounds < 2) {
+              safetyRounds++;
+              if (!originalPromptBeforeSafety) {
+                originalPromptBeforeSafety = finalPrompt;
+              }
+
+              if (this.callbacks.onGlobalError) {
+                this.callbacks.onGlobalError(
+                  `#${promptItem.order}: Bị chặn → AI đang chỉnh prompt (${safetyRounds}/2)`
+                );
+              }
+
+              try {
+                finalPrompt = await rewritePromptForSafety(finalPrompt, safetyRounds as 1 | 2);
+                safetyRewritten = true;
+                continue;
+              } catch (rewriteErr) {
+                console.warn('AI viết lại prompt lỗi:', rewriteErr);
+              }
             }
+
+            // Sau 2 lần viết lại vẫn bị chặn: lỗi cuối
+            const finalSafetyError = 'Bị chặn vì chính sách sau 2 lần AI chỉnh prompt. Sửa prompt tay rồi tạo lại.';
+            progress.stage = 'error';
+            progress.error = finalSafetyError;
+            progress.errorStage = 'generating';
+            qItem.status = 'error';
+            qItem.error = finalSafetyError;
+            this.scheduleBatchedUpdate(id);
+            this.checkAllCompleted();
+            return;
           }
+
+          // Lỗi tạm thời (dịch vụ, mạng, timeout)
+          attempt++;
 
           if (isTemporaryError(errMsg) && attempt <= maxRetries) {
             const waitTime = attempt === 1 ? 4000 : attempt === 2 ? 10000 : 25000;
@@ -1184,7 +1214,7 @@ export class AutoPilotPipeline {
   }
 
   // ==========================================
-  // KHÂU 2: AI CHỌN HIỆU ỨNG (ÁP DỤNG CHOOSEVARIEDMOVE - ĐỢT 7B)
+  // KHÂU 2: AI CHỌN HIỆU ỨNG (ÁP DỤNG CHOOSEVARIEDMOVE)
   // ==========================================
   private enqueueEffect(id: string): void {
     this.effectQueue.push(id);
@@ -1279,7 +1309,7 @@ export class AutoPilotPipeline {
       qItem.effectConfig.durationSec = this.config.fixedDurationSec;
     }
 
-    // ĐA DẠNG MÁY QUAY (ĐỢT 7B): ÁP DỤNG chooseVariedMove
+    // ĐA DẠNG MÁY QUAY: ÁP DỤNG chooseVariedMove
     if (qItem.effectConfig) {
       const curMove = qItem.effectConfig.camera.move;
       const isAiSource = qItem.effectConfig.source === 'ai';
@@ -1288,11 +1318,9 @@ export class AutoPilotPipeline {
         const variedMove = chooseVariedMove(curMove, this.recentProcessedMoves);
         if (variedMove !== curMove) {
           qItem.effectConfig.camera.move = variedMove;
-          // handheld thì tối đa 0.5 intensity
           if (variedMove === 'handheld' && qItem.effectConfig.camera.intensity > 0.5) {
             qItem.effectConfig.camera.intensity = 0.5;
           }
-          // aiReason giữ nguyên theo yêu cầu (1)
         }
       }
 
@@ -1570,7 +1598,7 @@ export class AutoPilotPipeline {
   }
 
   // ==========================================
-  // KẾT THÚC TIẾN TRÌNH & GHÉP VIDEO & MANIFEST TỔNG (Đợt 7B: thêm lastBatchIndex)
+  // KẾT THÚC TIẾN TRÌNH & GHÉP VIDEO & MANIFEST TỔNG
   // ==========================================
   private async finalizePipeline(): Promise<void> {
     const totalTimeMs = Math.round(performance.now() - this.startTime);
@@ -1671,12 +1699,10 @@ export class AutoPilotPipeline {
     });
     notCompletedOrders.sort((a, b) => a - b);
 
-    // Xuất manifest tổng {dựÁn}_manifest.json (Đợt 7B: thêm lastBatchIndex)
+    // Xuất manifest tổng
     if (this.config.downloadManifest && !this.isStopped) {
       try {
         const sortedCompletedClips = [...this.completedManifestItems].sort((a, b) => a.order - b.order);
-
-        // Số lô cuối đã ghi (nếu đã ghi ít nhất 1 lô thì là currentBatchIndex - 1, ngược lại 0)
         const lastBatchRecorded = Math.max(0, this.currentBatchIndex - 1);
 
         const manifestSummaryContent: any = {

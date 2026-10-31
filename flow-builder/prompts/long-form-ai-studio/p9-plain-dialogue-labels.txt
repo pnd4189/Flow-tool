@@ -1,0 +1,14 @@
+SỬA services/scriptImport.ts, CHỈ nhánh kịch bản dạng thường (vòng "for (const line of rawLines)" có parseDialogueLine). KHÔNG đổi nhánh khối có cấu trúc "--- SCENE ---", KHÔNG đổi file khác.
+
+Lỗi đo được:
+- "CẢNH 1: …" rồi dòng đầu là "LAN: Chào anh" → câu thoại bị đưa nguyên vào action của shot ("LAN: Chào anh" thành nội dung hình ảnh), dialogues = 0. Nguyên nhân: điều kiện "diaCheck.isDialogue && shots.length > 0" — chưa có shot thì rơi xuống nhánh beat. Cùng điều kiện đó còn gắn thoại đầu cảnh mới vào shot cuối của CẢNH TRƯỚC, và thoại thứ hai liên tiếp GHI ĐÈ thoại thứ nhất.
+- Dòng nhãn "Camera: slow push in" giữa các dòng hành động bị tách thành 1 shot riêng có action "Camera: slow push in".
+
+Sửa:
+1. Dòng thoại: chỉ gắn vào shot cuối nếu shot đó thuộc currentScene VÀ audioDialogue của nó đang rỗng. Ngược lại tạo shot MỚI trong currentScene: actionBeat = action = `${speaker} nói`, audioDialogue = nội dung, characterIds có nhân vật Vault khớp tên đứng đầu (không khớp thì dùng mặc định như các shot khác), các trường còn lại và transitionIn theo đúng quy tắc của shot beat hiện có. dialogues++ trong cả hai trường hợp.
+2. Dòng nhãn đã biết (dạng "Tên: nội dung" với normalizeLabelKey(Tên) thuộc KNOWN_LABEL_KEYS_SET, không phải tiêu đề cảnh):
+   - Nếu shot cuối thuộc currentScene: nối ` (${Tên}: ${nội dung})` vào CUỐI action của shot đó (không đổi actionBeat), không tạo shot mới.
+   - Nếu cảnh chưa có shot: nhãn ánh xạ 'setting' và currentScene.environment đang rỗng thì gán environment = nội dung; nhãn khác giữ trong danh sách chờ và nối (cùng định dạng) vào action của shot đầu tiên được tạo trong cảnh đó. Gặp tiêu đề cảnh mới thì xoá danh sách chờ.
+   - Nhãn 'dialogue' xử lý như dòng thoại ở mục 1 với speaker rỗng (action = "Nhân vật nói").
+
+KIỂM TRA: "CẢNH 1: Phòng thí nghiệm - đêm / LAN: Chào anh / Năm 1876: Bell gọi điện thoại đầu tiên / Anh ấy mỉm cười." (Vault có Lan) → 3 shot, 1 thoại, không action nào bắt đầu bằng "LAN:". "CẢNH 1: Phòng thí nghiệm / Anh ấy bước vào phòng. / LAN: Chào anh / Camera: slow push in / MINH: \"Em đến rồi\"" → 2 shot, 2 thoại, shot 1 action chứa "(Camera: slow push in)". File KTT "--- SCENE ---" vẫn đúng 120 shot.

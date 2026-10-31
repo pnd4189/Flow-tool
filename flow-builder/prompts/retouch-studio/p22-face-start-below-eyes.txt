@@ -1,0 +1,4 @@
+Sửa đúng 2 chỗ trong services/faceSlimService.ts applyFaceSlim, KHÔNG đổi gì khác. Mục đích: vùng mắt (cả mí dưới và đuôi mắt) không bị nắn dù chỉ 1px.
+1. startY = Math.max(0, Math.floor(E + 0.12 * D)) thay vì Math.floor(E).
+2. vy = smoothstep(E + 0.12 * D, E + 0.5 * D, y) * (1 - smoothstep(C - 0.06 * D, C + 0.35 * D, y)) thay cho smoothstep(E, E + 0.45 * D, y) ở thừa số đầu.
+Cập nhật chú thích đầu hàm cho khớp.

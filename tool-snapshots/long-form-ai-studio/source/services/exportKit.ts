@@ -66,6 +66,29 @@ export function formatTimestampMMSS(seconds: number): string {
   return `${mm}:${ss}.${tenths}`;
 }
 
+export interface ManifestShotItem {
+  order: number;
+  fileName: string;
+  durationSeconds: number;
+  sceneTitle: string;
+  transitionIn: string;
+  narration?: string;
+  dialogue?: string;
+  eraLabel?: string;
+  factNote?: string;
+  ambient?: string;
+  sfx?: string;
+  effects?: string[];
+  cameraMovement?: string;
+  qc?: {
+    score: number;
+    verdict: string;
+  };
+  takeIndex: number;
+  mediaId?: string;
+  isRendered: boolean;
+}
+
 export interface EditManifest {
   version: 1;
   title: string;
@@ -76,37 +99,23 @@ export interface EditManifest {
     label: string;
   };
   createdAt: number;
-  totalDurationSeconds: number;
+  totalDurationSeconds: number; // Chỉ tính các shot CÓ take active
   scenes: Array<{
     id: string;
     title: string;
     eraLabel?: string;
     environment: string;
   }>;
-  shots: Array<{
+  shots: ManifestShotItem[]; // Các shot đã render (có active take)
+  missingShots: Array<{
     order: number;
-    fileName: string;
-    durationSeconds: number;
     sceneTitle: string;
-    transitionIn: string;
-    narration?: string;
-    dialogue?: string;
-    eraLabel?: string;
-    factNote?: string;
-    ambient?: string;
-    sfx?: string;
-    effects?: string[];
-    cameraMovement?: string;
-    qc?: {
-      score: number;
-      verdict: string;
-    };
-    takeIndex: number;
-    mediaId?: string;
-  }>;
+    actionBeat: string;
+    plannedDuration: number;
+  }>; // Shot chưa render
 }
 
-/** Tạo đối tượng Manifest Hậu kỳ v1 - fileName của shots luôn khớp với generateTakeExportFilename */
+/** Tạo đối tượng Manifest Hậu kỳ v1 - Chỉ tính thời lượng shot CÓ take active, tách missingShots */
 export function buildEditManifest(params: {
   projectTitle: string;
   config: ProjectConfig;
@@ -119,48 +128,65 @@ export function buildEditManifest(params: {
   scenes.forEach((s) => sceneMap.set(s.id, s));
 
   let totalDuration = 0;
+  const renderedShots: ManifestShotItem[] = [];
+  const missingShots: Array<{
+    order: number;
+    sceneTitle: string;
+    actionBeat: string;
+    plannedDuration: number;
+  }> = [];
 
-  const manifestShots = shots.map((sh) => {
+  shots.forEach((sh) => {
     const activeTake = getActiveTake(sh);
-    const takeIndex = (sh.takes && activeTake)
-      ? Math.max(1, sh.takes.findIndex((t) => t.id === activeTake.id) + 1)
-      : 1;
-
     const sc = sceneMap.get(sh.sceneId);
-    const duration = activeTake?.durationSeconds || sh.durationOverride || config.durationSeconds;
-    totalDuration += duration;
 
-    const fileName = generateTakeExportFilename({
-      projectTitle,
-      order: sh.order,
-      sceneTitle: sc?.title || 'Scene',
-      actionBeat: sh.actionBeat || 'shot',
-      takeIndex,
-    });
+    if (activeTake) {
+      const takeIndex = (sh.takes && activeTake)
+        ? Math.max(1, sh.takes.findIndex((t) => t.id === activeTake.id) + 1)
+        : 1;
+      const duration = activeTake.durationSeconds || sh.durationOverride || config.durationSeconds;
+      totalDuration += duration;
 
-    return {
-      order: sh.order,
-      fileName,
-      durationSeconds: duration,
-      sceneTitle: sc?.title || 'Scene',
-      transitionIn: sh.transitionIn,
-      narration: sh.narration?.trim() || undefined,
-      dialogue: sh.audioDialogue?.trim() || undefined,
-      eraLabel: sh.eraLabel?.trim() || undefined,
-      factNote: sh.factNote?.trim() || undefined,
-      ambient: sh.ambient?.trim() || undefined,
-      sfx: sh.audioSfx?.trim() || undefined,
-      effects: sh.effects && sh.effects.length > 0 ? sh.effects : undefined,
-      cameraMovement: sh.cameraMovement,
-      qc: activeTake?.qc
-        ? {
-            score: activeTake.qc.totalScore,
-            verdict: activeTake.qc.verdict,
-          }
-        : undefined,
-      takeIndex,
-      mediaId: activeTake?.mediaId,
-    };
+      const fileName = generateTakeExportFilename({
+        projectTitle,
+        order: sh.order,
+        sceneTitle: sc?.title || 'Scene',
+        actionBeat: sh.actionBeat || 'shot',
+        takeIndex,
+      });
+
+      renderedShots.push({
+        order: sh.order,
+        fileName,
+        durationSeconds: duration,
+        sceneTitle: sc?.title || 'Scene',
+        transitionIn: sh.transitionIn,
+        narration: sh.narration?.trim() || undefined,
+        dialogue: sh.audioDialogue?.trim() || undefined,
+        eraLabel: sh.eraLabel?.trim() || undefined,
+        factNote: sh.factNote?.trim() || undefined,
+        ambient: sh.ambient?.trim() || undefined,
+        sfx: sh.audioSfx?.trim() || undefined,
+        effects: sh.effects && sh.effects.length > 0 ? sh.effects : undefined,
+        cameraMovement: sh.cameraMovement,
+        qc: activeTake.qc
+          ? {
+              score: activeTake.qc.totalScore,
+              verdict: activeTake.qc.verdict,
+            }
+          : undefined,
+        takeIndex,
+        mediaId: activeTake.mediaId,
+        isRendered: true,
+      });
+    } else {
+      missingShots.push({
+        order: sh.order,
+        sceneTitle: sc?.title || 'Scene',
+        actionBeat: sh.actionBeat || 'shot',
+        plannedDuration: sh.durationOverride || config.durationSeconds,
+      });
+    }
   });
 
   return {
@@ -179,17 +205,18 @@ export function buildEditManifest(params: {
       title: s.title,
       environment: s.environment,
     })),
-    shots: manifestShots,
+    shots: renderedShots,
+    missingShots,
   };
 }
 
-/** Sinh nội dung concat list cho ffmpeg: mỗi dòng `file '<fileName>'`, khớp 100% tên file clip thật */
+/** Sinh nội dung concat list cho ffmpeg: CHỈ gồm các shot CÓ take active */
 export function buildConcatListText(manifest: EditManifest): string {
   const lines = manifest.shots.map((sh) => `file '${sh.fileName}'`);
   return lines.join('\n') + (lines.length > 0 ? '\n' : '');
 }
 
-/** Sinh danh sách lời dẫn cộng dồn thời lượng: [00:08.0 – 00:16.0] #2 Paris, 1769 — <narration> */
+/** Sinh danh sách lời dẫn cộng dồn thời lượng cho các shot đã có video */
 export function buildNarrationTimelineText(manifest: EditManifest): string {
   const lines: string[] = [];
   let currentTime = 0;
@@ -208,17 +235,19 @@ export function buildNarrationTimelineText(manifest: EditManifest): string {
   }
 
   if (lines.length === 0) {
-    return 'Chưa có shot nào có lời dẫn (narration).\n';
+    return 'Chưa có shot nào đã render có lời dẫn (narration).\n';
   }
 
   return lines.join('\n\n') + '\n';
 }
 
-/** Sinh bảng storyboard markdown | # | Scene | Tên clip | Máy quay | Lời dẫn | Ghi chú sự thật | */
+/** Sinh bảng storyboard markdown: liệt kê clip đã render, và phần "Thiếu" cho shot chưa render */
 export function buildStoryboardMarkdown(manifest: EditManifest): string {
   const rows: string[] = [
     `# Bảng Storyboard Hậu Kỳ: ${manifest.title}`,
-    `*Thời lượng ước tính: ${manifest.totalDurationSeconds}s • Tỉ lệ: ${manifest.aspectRatio} • Phong cách: ${manifest.look.label}*`,
+    `*Tổng thời lượng các shot đã render: ${manifest.totalDurationSeconds}s • Tỉ lệ: ${manifest.aspectRatio} • Phong cách: ${manifest.look.label}*`,
+    '',
+    '## 1. Danh sách clip đã render (Đưa vào Concat)',
     '',
     '| # | Scene | Tên clip | Máy quay | Lời dẫn | Ghi chú sự thật |',
     '|---|---|---|---|---|---|',
@@ -232,6 +261,20 @@ export function buildStoryboardMarkdown(manifest: EditManifest): string {
     rows.push(
       `| ${sh.order} | ${sh.sceneTitle} | ${sh.fileName} | ${camera} | ${cleanNarration} | ${cleanFact} |`
     );
+  }
+
+  if (manifest.missingShots.length > 0) {
+    rows.push(
+      '',
+      '## 2. Phần Shot Thiếu (Chưa render — không đưa vào concat_list.txt)',
+      '',
+      '| # | Scene | Kịch bản / Hành động | Thời lượng dự kiến |',
+      '|---|---|---|---|'
+    );
+    for (const ms of manifest.missingShots) {
+      const cleanBeat = ms.actionBeat.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+      rows.push(`| ${ms.order} | ${ms.sceneTitle} | ${cleanBeat} | ${ms.plannedDuration}s |`);
+    }
   }
 
   return rows.join('\n') + '\n';
@@ -252,12 +295,35 @@ export function utf8ToBase64(text: string): string {
   return btoa(binary);
 }
 
+export interface PostProductionKitFile {
+  filename: string;
+  mimeType: 'application/json' | 'text/plain' | 'text/markdown';
+  content: string;
+}
+
+export interface DownloadKitResult {
+  downloadedFiles: string[];
+  failedFiles: Array<{ filename: string; error: string; content: string; mimeType: 'application/json' | 'text/plain' | 'text/markdown' }>;
+}
+
+/** Tải 1 file đơn lẻ trong gói hậu kỳ */
+export async function downloadSingleKitFile(file: {
+  filename: string;
+  mimeType: 'application/json' | 'text/plain' | 'text/markdown';
+  content: string;
+}): Promise<void> {
+  const base64 = utf8ToBase64(file.content);
+  await Flow.download({
+    base64,
+    mimeType: file.mimeType,
+    filename: file.filename,
+  });
+}
+
 /**
  * Tải lần lượt 4 file trong Gói Hậu Kỳ (dùng projectSlug chung):
- * 1. ${pSlug}_edit_manifest.json (application/json)
- * 2. ${pSlug}_concat_list.txt (text/plain)
- * 3. ${pSlug}_narration.txt (text/plain)
- * 4. ${pSlug}_storyboard.md (text/markdown)
+ * Mỗi file bọc try/catch; lỗi thì ghi vào failedFiles và tiếp tục tải file sau.
+ * Trả về { downloadedFiles, failedFiles }
  */
 export async function downloadPostProductionKit(params: {
   projectTitle: string;
@@ -265,7 +331,7 @@ export async function downloadPostProductionKit(params: {
   scenes: Scene[];
   shots: Shot[];
   onProgress?: (fileIndex: number, totalFiles: number, filename: string) => void;
-}): Promise<{ downloadedFiles: string[] }> {
+}): Promise<DownloadKitResult> {
   const { projectTitle, config, scenes, shots, onProgress } = params;
   const pSlug = projectSlug(projectTitle);
 
@@ -274,7 +340,7 @@ export async function downloadPostProductionKit(params: {
   const narrationText = buildNarrationTimelineText(manifest);
   const storyboardMd = buildStoryboardMarkdown(manifest);
 
-  const kitFiles: Array<{ filename: string; mimeType: 'application/json' | 'text/plain' | 'text/markdown'; content: string }> = [
+  const kitFiles: PostProductionKitFile[] = [
     {
       filename: `${pSlug}_edit_manifest.json`,
       mimeType: 'application/json',
@@ -298,23 +364,34 @@ export async function downloadPostProductionKit(params: {
   ];
 
   const downloadedFiles: string[] = [];
+  const failedFiles: Array<{
+    filename: string;
+    error: string;
+    content: string;
+    mimeType: 'application/json' | 'text/plain' | 'text/markdown';
+  }> = [];
 
   for (let i = 0; i < kitFiles.length; i++) {
     const file = kitFiles[i];
     if (onProgress) onProgress(i + 1, kitFiles.length, file.filename);
 
-    const base64 = utf8ToBase64(file.content);
-    await Flow.download({
-      base64,
-      mimeType: file.mimeType,
-      filename: file.filename,
-    });
+    try {
+      await downloadSingleKitFile(file);
+      downloadedFiles.push(file.filename);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      failedFiles.push({
+        filename: file.filename,
+        error: errMsg,
+        content: file.content,
+        mimeType: file.mimeType,
+      });
+    }
 
-    downloadedFiles.push(file.filename);
     if (i < kitFiles.length - 1) {
       await sleep(1000);
     }
   }
 
-  return { downloadedFiles };
+  return { downloadedFiles, failedFiles };
 }

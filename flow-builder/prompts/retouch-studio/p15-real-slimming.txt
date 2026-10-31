@@ -1,0 +1,25 @@
+SỬA LỖI: yêu cầu "chỉnh bụng nhân vật gọn lại" không cho kết quả thấy được.
+
+Đo trên ảnh thật 1920x2560 của user:
+(1) Ở chế độ mặc định "Chỉnh theo prompt", gõ "chỉnh bụng gọn lại" thì yêu cầu đi đường AI, mà AI chỉ đổi nếp áo.
+(2) applyLocalWaistSlimming ép mạnh nhất ở GIỮA vùng chọn và giảm về 0 ở mép (horizontalWeight = 1 - smoothstep(0.45, 1, r)), nên đường viền thân gần như không dịch; ở mức 20%, ảnh xuất gần như không khác ảnh gốc.
+Đã thử thuật toán dưới đây trên chính ảnh đó: ở mức 15–25%, thân và bụng gọn thấy rõ, mép áo liền mạch.
+
+CHỈ sửa đúng các chỗ nêu, KHÔNG viết lại file, giữ nguyên mọi tính năng khác. Không dùng window.confirm/alert/prompt, không localStorage.
+
+1. services/bodyReshapeService.ts — giữ nguyên chữ ký hàm, interface kết quả, nội suy premultiplied alpha, và việc chép nguyên pixel trong protectionMask. Thay phần ánh xạ bằng:
+- Khung thân = bounding box các pixel sel>0 && prot===0 (minX,maxX,minY,maxY như hiện tại). cx = (minX+maxX)/2; B = (maxX-minX)/2 * 1.02; pad = 0.30*(maxX-minX); H = Math.min(B + pad, cx, w - 1 - cx). Nếu H <= B + 2 thì ném Error('Thân quá sát mép ảnh, không còn chỗ nền để thu gọn.').
+- Vùng làm việc: cột xa = ceil(cx-H) .. xb = floor(cx+H), hàng minY..maxY. Vùng này áp dụng cho MỌI pixel không bị bảo vệ, kể cả pixel ngoài vùng chọn (nền hai bên cần giãn ra lấp chỗ thân thu vào). Bỏ việc trộn theo sVal; pixel prot>0 giữ nguyên nguồn.
+- Mỗi hàng: t = (y-minY)/max(1,maxY-minY); vw = smoothstep(0,0.3,t) * smoothstep(0,0.3,1-t); sy = strength*vw; nếu sy <= 0 bỏ qua hàng. Bp = B*(1-sy).
+- Mỗi cột: d = |x-cx|, sign = x<cx ? -1 : 1; srcD = d <= Bp ? d/(1-sy) : B + (d-Bp)*(H-B)/(H-Bp); sx = cx + sign*srcD; nội suy ngang tại sx như hiện có (kẹp 0..w-1).
+  (Ý nghĩa: cả thân trong [-B, B] co đều về giữa theo hệ số 1-sy nên đường viền dịch vào thật; dải nền [B, H] giãn ra lấp chỗ trống; tại d=H và ở mép trên/dưới, ánh xạ là đồng nhất nên không có đường nối.)
+- editableCount = số pixel không bị bảo vệ trong vùng làm việc; changedPixelCount đếm trong vùng làm việc; outsidePreservedCount = số pixel ngoài vùng làm việc (không bị bảo vệ). Cập nhật chú thích đầu hàm cho đúng thuật toán mới.
+
+2. components/RightSidebar.tsx:
+- useState(18) của waistSlimmingStrength đổi thành useState(15).
+- Thêm const SLIM_REQUEST_REGEX = /bụng|vòng eo|(^|\s)eo(\s|$|[,.!])|thon|béo|mập|slim|waist|belly|tummy/i.
+- Trong hàm thực hiện: tính const effectiveMode = aiMode === 'prompt_edit' && SLIM_REQUEST_REGEX.test(userPrompt) ? 'reshape_body' : aiMode; ROUTE A dùng điều kiện effectiveMode === 'reshape_body'. Khi chuyển từ prompt sang nắn dáng: nếu prompt có số "N%" thì dùng N (kẹp 5..30), không thì dùng giá trị thanh trượt. Mô tả bản xem trước thêm "Nhận ra yêu cầu thon gọn → dùng nắn dáng (không dùng AI)".
+- Dưới ô prompt khi aiMode === 'prompt_edit' và SLIM_REQUEST_REGEX khớp: hiện dòng chữ nhỏ màu xanh "Nhận ra yêu cầu thon gọn: sẽ dùng Chỉnh dáng (nắn pixel). Bấm vào phần thân/bụng để chọn rồi bấm Thực hiện; không cần mở vùng."
+- Gợi ý của chế độ reshape_body (tooltip/hint): "Bấm chọn phần thân/bụng (không cần Mở vùng chỉnh dáng), chỉnh thanh mức độ rồi Thực hiện."
+
+KIỂM TRA: build không lỗi; chọn thân người trên ảnh chân dung, mức 15% thì đường viền hai bên thân dịch vào rõ (mỗi bên dịch vào khoảng 15% nửa bề rộng thân ở đoạn giữa), mặt (vùng bảo vệ) giữ nguyên pixel, pixel ngoài vùng làm việc giữ nguyên; gõ "chỉnh bụng gọn lại 20%" ở chế độ Chỉnh theo prompt thì chạy nắn dáng 20%, không gọi AI.

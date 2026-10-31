@@ -1,0 +1,17 @@
+--- SCENE 001 ---
+
+Camera: low angle
+
+Story DNA: A girl wakes up in fear.
+
+Setting: Basement room
+
+Subject: A young woman in pale sleepwear
+
+Action / Energy: She bolts upright, gripping the blanket.
+
+--- SCENE 002 ---
+
+Setting: Basement room
+
+Action / Energy: Her friend steps into the dark hallway.

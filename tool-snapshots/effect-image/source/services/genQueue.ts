@@ -163,7 +163,8 @@ export function isSafetyPolicyError(message: string): boolean {
     m.includes('blocked') ||
     m.includes('vi phạm') ||
     m.includes('không an toàn') ||
-    m.includes('sensitive')
+    m.includes('sensitive') ||
+    m.includes('lượt tạo này có thể vi phạm các chính sách của chúng tôi')
   );
 }
 
@@ -214,10 +215,19 @@ export async function constructSentPrompt(
     promptText = `${promptText} ${suffix}`;
   }
 
-  // Thêm Avoid: {negative}
+  // Thêm Avoid: {negative} có lọc các từ nhạy cảm để không làm bộ lọc chặn oan
   if (negative && negative.trim()) {
-    const negClean = ensureTerminalPunctuation(negative.trim());
-    promptText = `${ensureTerminalPunctuation(promptText)} Avoid: ${negClean}`;
+    const sensitiveRegex = /nud|naked|sex|suggestive|explicit|gore|blood|violen|corpse|dead|kill|weapon|celebrit|public figure|real person|minor|child/i;
+    const parts = negative
+      .split(/[,;\r\n]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && !sensitiveRegex.test(s));
+
+    if (parts.length > 0) {
+      const filteredNegative = parts.join(', ');
+      const negClean = ensureTerminalPunctuation(filteredNegative);
+      promptText = `${ensureTerminalPunctuation(promptText)} Avoid: ${negClean}`;
+    }
   }
 
   // Thêm No text, no captions, no watermark (nếu prompt không đòi hỏi text/logo/typography)
@@ -234,15 +244,14 @@ export async function constructSentPrompt(
   };
 }
 
-// Viết lại prompt khi dính Safety (có timeout 60s)
-export async function rewritePromptForSafety(unsafePrompt: string): Promise<string> {
+// Viết lại prompt khi dính Safety (có hỗ trợ round: 1 | 2)
+export async function rewritePromptForSafety(unsafePrompt: string, round: 1 | 2 = 1): Promise<string> {
   const callRewrite = async () => {
-    const systemInstruction = `You are a creative prompt safety optimizer.
-The user's image generation prompt was flagged by content safety filters.
-Rewrite the prompt to make it 100% compliant with standard safety guidelines.
-Keep the core subject, composition, mood, colors, and art style intact.
-Remove all potentially sensitive, violent, or policy-violating phrasing.
-Return ONLY the rewritten prompt string with no quotes or explanations.`;
+    let systemInstruction = `You rewrite image-generation prompts that were blocked by a content-safety filter so they pass while keeping the same scene. Keep: characters' appearance, setting, composition, camera, lighting, color palette, art style and mood. Replace or soften anything graphic or sensitive: blood, gore, wounds, corpses and death become implied (shadows, aftermath hints, fallen objects, frightened reactions); sexual or suggestive cues, nudity, bedroom intimacy become neutral and fully clothed; real people or celebrities become fictional characters; weapons aimed at people become non-threatening. Drop any 'Avoid:' list that names sensitive things. Never add words like nudity, gore, blood, sex, kill in any form, not even as negatives. Output English only, one paragraph, no quotes, no markdown, no explanation.`;
+
+    if (round === 2) {
+      systemInstruction += ` The previous rewrite was still blocked: be clearly more conservative, keep only the safe visual essentials.`;
+    }
 
     const res = await Flow.generate.text(`Rewrite safely: "${unsafePrompt}"`, {
       systemInstruction,
@@ -252,7 +261,7 @@ Return ONLY the rewritten prompt string with no quotes or explanations.`;
     return (res.text || '').trim().replace(/^["']|["']$/g, '') || unsafePrompt;
   };
 
-  return await withTimeout(callRewrite(), 60000, 'rewritePromptForSafety');
+  return await withTimeout(callRewrite(), 60000, `rewritePromptForSafety (round ${round})`);
 }
 
 // AI Soi ảnh (Strict Image QA 0 credit) với timeout 60s

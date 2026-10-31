@@ -1,0 +1,35 @@
+SỬA LỖI nạp kịch bản văn bản (services/scriptImport.ts, phần "4. PARSE VĂN BẢN") và lỗi viết kịch bản AI dở dang (components/ScriptEngine.tsx). CHỈ sửa đúng các chỗ nêu, KHÔNG viết lại file, giữ nguyên nhánh JSON và mọi tính năng khác.
+
+Nguyên nhân (đọc code):
+- SCENE_HEADER_REGEX đòi dòng bắt đầu bằng SCENE/INT./CẢNH nên "--- SCENE 001 ---" thành 1 shot.
+- DIALOGUE_REGEX khớp mọi "Nhãn: nội dung", nên "Camera: ...", "Subject: ...", "Action / Energy: ...", "Năm 1876: Bell..." bị coi là lời thoại và ghi đè audioDialogue của shot trước; prompt video thành `X says: "slow push in"`.
+- File 1 cảnh bị cắt thành từng khối 4 shot và mất mô tả bối cảnh của tiêu đề.
+
+1. Khối có cấu trúc (thử TRƯỚC cách tách theo dòng): nếu văn bản có ≥ 2 dòng tiêu đề đứng riêng (khớp /^[\s\-=#\[\]*]*(?:scene|cảnh|shot|prompt)\s*#?\s*\d+[\s\-=\]:*]*$/i, ví dụ "--- SCENE 001 ---", "## Scene 2", "CẢNH 3:") VÀ ít nhất một nửa số khối có ≥ 2 dòng nhãn đã biết, thì mỗi khối giữa hai tiêu đề = 1 shot. Nhãn đã biết (không phân biệt hoa thường, bỏ khoảng trắng quanh "/"):
+   camera, composition, story dna, setting, bối cảnh, subject, chủ thể, action, action/energy, hành động, style, phong cách, lighting, lighting/color, ánh sáng, atmosphere, không khí, negative, tránh, dialogue, lời thoại, narration, voice-over, vo, lời dẫn, sfx, âm thanh, ambient, start pose, end pose.
+   Gán: action = Action/Energy (hoặc Action/Hành động; không có thì Story DNA); actionBeat = Story DNA (hoặc action), cắt 160 ký tự; subject = Subject/Chủ thể; audioDialogue = Dialogue/Lời thoại; narration = Narration/VO/Lời dẫn; audioSfx = SFX; ambient = Ambient, không có thì Atmosphere; startPose/endPose nếu có. Camera, Composition, Style, Lighting, Negative bỏ qua (thư viện máy quay/look của tool lo phần đó). Các khối liên tiếp cùng Setting gộp thành 1 Scene (environment = Setting, cắt 400 ký tự); shot đầu mỗi Scene transitionIn 'cut', các shot sau 'chain'. Tiêu đề scene = Setting rút gọn 40 ký tự, hoặc "Scene NN".
+2. Cách tách theo dòng (khi không phải khối có cấu trúc):
+   - SCENE_HEADER_REGEX cho phép ký tự trang trí ở đầu/cuối: /^[\s\-=#\[*]*(INT\.|EXT\.|SCENE\s+\d+|CẢNH\s+\d+|Cảnh\s+\d+:?)/i, và bỏ dấu trang trí khi lấy title.
+   - Một dòng "Tên: nội dung" CHỈ là lời thoại khi: tên khớp nhân vật trong Vault (normalizeName), HOẶC tên viết HOA toàn bộ (kiểu kịch bản), HOẶC nội dung bắt đầu bằng dấu ngoặc kép. Tên chứa chữ số hoặc thuộc danh sách nhãn đã biết ở mục 1 thì KHÔNG phải lời thoại. Dòng không phải thoại xử lý như beat bình thường.
+   - Chỉ gom 4 shot/scene khi không có dòng tiêu đề nào (scene duy nhất là scene tự tạo "Scene 01"); nếu có tiêu đề thì giữ nguyên scene và environment.
+3. ScriptEngine.tsx (viết kịch bản bằng AI theo từng scene): nếu một scene lỗi giữa chừng thì KHÔNG thay storyboard. Hiện lỗi thật và 2 nút: "Thêm N scene đã viết xong vào cuối" (giữ shot cũ, keyframe và take) và "Thử lại từ scene lỗi" (tiếp tục từ scene k với ngữ cảnh đã có). Chỉ khi viết xong hết mới thay storyboard như hiện nay và báo "Hoàn tất".
+
+KIỂM TRA: build không lỗi. Nạp file 2 khối:
+--- SCENE 001 ---
+
+Camera: low angle
+
+Story DNA: A girl wakes up in fear.
+
+Setting: Basement room
+
+Subject: A young woman in pale sleepwear
+
+Action / Energy: She bolts upright, gripping the blanket.
+
+--- SCENE 002 ---
+
+Setting: Basement room
+
+Action / Energy: Her friend steps into the dark hallway.
+→ đúng 1 scene ("Basement room"), 2 shot, action là câu Action / Energy, audioDialogue trống. Nạp "LAN: Chào anh" với Vault có Lan → lời thoại; nạp "Năm 1876: Bell gọi điện" → 1 shot, không phải thoại.

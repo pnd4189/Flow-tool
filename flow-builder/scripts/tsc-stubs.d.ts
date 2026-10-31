@@ -1,0 +1,4 @@
+declare module 'react' { const React: any; export default React; export const useState: <T = any>(v?: T | (() => T)) => [T, (v: T | ((p: T) => T)) => void]; export const useRef: <T = any>(v?: T) => { current: T }; export const useMemo: <T>(f: () => T, d?: any[]) => T; export const useEffect: any; export const useCallback: <T>(f: T, d?: any[]) => T; export type FC<P = {}> = (p: P) => any; export type ReactNode = any; export type ChangeEvent<T = any> = any; export type MouseEvent<T = any> = any; export type KeyboardEvent<T = any> = any; export type DragEvent<T = any> = any; export type CSSProperties = any; export type RefObject<T> = { current: T | null }; export const Fragment: any; }
+declare module 'react-dom/client' { const x: any; export = x; }
+declare module 'flow-sdk' { export const Flow: any; }
+declare namespace JSX { interface IntrinsicElements { [k: string]: any } interface Element {} }

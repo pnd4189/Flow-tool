@@ -254,6 +254,7 @@ export async function generateSingleKeyframeWithRetry(
         mediaId: res.mediaId,
         thumbBase64,
         promptUsed: prompt,
+        aspectRatio,
       };
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);

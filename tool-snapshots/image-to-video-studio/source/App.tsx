@@ -24,6 +24,11 @@ import {
   resetRunTag,
   buildImageDownloadFilename,
 } from './services/downloadQueue';
+import {
+  isPolicyBlockError,
+  buildImagePrompt,
+  rewritePromptForPolicy,
+} from './services/safety';
 import { SectionLabel, PillButton, FieldDropdown, DragNumberField } from './components/Primitives';
 import { ImageEditor } from './components/ImageEditor';
 import { VideoStudio } from './components/VideoStudio';
@@ -111,6 +116,9 @@ export default function App() {
 
   const [inputText, setInputText] = useState('');
   const [scenes, setScenes] = useState<Scene[]>([]);
+  const scenesRef = useRef<Scene[]>(scenes);
+  scenesRef.current = scenes;
+
   const [activeTab, setActiveTab] = useState<'input' | 'batch' | 'video' | 'gallery' | 'download'>('input');
   
   // Settings
@@ -213,6 +221,8 @@ export default function App() {
           negativePrompt: s.negativePrompt,
           aspectRatio: s.aspectRatio,
           motionPrompt: s.motionPrompt,
+          originalPrompt: s.originalPrompt,
+          safetyNote: s.safetyNote,
         })),
         usage: usageStateRef.current,
       };
@@ -284,6 +294,8 @@ export default function App() {
           negativePrompt: typeof s.negativePrompt === 'string' ? s.negativePrompt : undefined,
           aspectRatio: RATIOS.includes(s.aspectRatio) ? (s.aspectRatio as AspectRatio) : '16:9',
           motionPrompt: typeof s.motionPrompt === 'string' ? s.motionPrompt : undefined,
+          originalPrompt: typeof s.originalPrompt === 'string' ? s.originalPrompt : undefined,
+          safetyNote: typeof s.safetyNote === 'string' ? s.safetyNote : undefined,
           status: 'pending',
         }));
         setScenes(restored);
@@ -387,7 +399,7 @@ export default function App() {
   };
 
   /**
-   * Core generator function for a single scene:
+   * Core generator function for a single scene có thang xử lý chính sách (policyLevel a->b->c):
    */
   const executeSceneGeneration = async (scene: Scene): Promise<{ success: boolean; isQuotaError?: boolean; capReached?: boolean }> => {
     if (usageStateRef.current.imageCount >= usageStateRef.current.dailyImageCap) {
@@ -399,8 +411,13 @@ export default function App() {
 
     const maxRetries = 2;
     const retryDelays = [8000, 20000];
+    let attempt = 0;
 
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    let policyLevel = 0;
+    let currentWorkingPrompt = scene.prompt;
+    let safePromptForSave: string | undefined = undefined;
+
+    while (true) {
       if (stopBatchRef.current) {
         updateScene(scene.id, { status: 'pending', retryInfo: undefined });
         return { success: false };
@@ -417,16 +434,13 @@ export default function App() {
       updateScene(scene.id, { 
         status: 'generating', 
         errorMessage: undefined, 
-        retryInfo: attempt > 0 ? `Retrying (${attempt}/${maxRetries})...` : undefined 
       });
 
-      try {
-        const effectivePrompt = scene.negativePrompt?.trim()
-          ? `${scene.prompt}\n\nAvoid: ${scene.negativePrompt.trim()}`
-          : scene.prompt;
+      const promptForTry = buildImagePrompt(currentWorkingPrompt, scene.negativePrompt, policyLevel);
 
+      try {
         const generatePromise = Flow.generate.image({
-          prompt: effectivePrompt,
+          prompt: promptForTry,
           aspectRatio: scene.aspectRatio,
           modelDisplayName: settings.modelDisplayName
         });
@@ -440,16 +454,31 @@ export default function App() {
         // Record successful generation in usage
         handleRecordImage(true, settings.modelDisplayName);
 
+        // Chuẩn bị cập nhật prompt và safetyNote nếu đã qua thang chính sách
+        const scenePatch: Partial<Scene> = {
+          errorMessage: undefined,
+          retryInfo: undefined,
+        };
+
+        if (policyLevel === 1) {
+          scenePatch.safetyNote = 'Đã bỏ negative để qua bộ lọc';
+        } else if (policyLevel >= 2 && safePromptForSave) {
+          scenePatch.originalPrompt = scene.originalPrompt || scene.prompt;
+          scenePatch.prompt = safePromptForSave;
+          scenePatch.safetyNote = policyLevel === 2
+            ? 'AI đã chỉnh prompt cho an toàn (lần 1)'
+            : 'AI đã chỉnh prompt cho an toàn (lần 2)';
+        }
+
         // Upscale and save result
-        updateScene(scene.id, { status: 'upscaling', retryInfo: undefined });
+        updateScene(scene.id, { status: 'upscaling', ...scenePatch });
         try {
           const upscaled = await upscaleImage(result.base64, result.mimeType, settings.resolution, scene.aspectRatio);
           const bytes = Math.round(upscaled.base64.length * 0.75);
 
           updateScene(scene.id, { 
             status: 'success', 
-            errorMessage: undefined,
-            retryInfo: undefined,
+            ...scenePatch,
             result: { 
               base64: upscaled.base64, 
               thumbBase64: upscaled.thumbBase64,
@@ -463,8 +492,7 @@ export default function App() {
         } catch (upscaleErr) {
           updateScene(scene.id, {
             status: 'success',
-            errorMessage: undefined,
-            retryInfo: undefined,
+            ...scenePatch,
             result: {
               base64: result.base64,
               thumbBase64: undefined,
@@ -477,20 +505,99 @@ export default function App() {
 
         return { success: true };
       } catch (err: any) {
-        if (!stopBatchRef.current) {
-          handleRecordImage(false, settings.modelDisplayName);
-        }
-
         const rawMsg = err?.message || 'Generation failed';
 
+        // 1. Quota error -> dừng ngay
         if (isQuotaError(rawMsg)) {
+          if (!stopBatchRef.current) {
+            handleRecordImage(false, settings.modelDisplayName);
+          }
           updateScene(scene.id, { status: 'error', errorMessage: 'Hết hạn mức tạo ảnh - đã dừng batch', retryInfo: undefined });
           return { success: false, isQuotaError: true };
         }
 
+        // 2. Thang xử lý chính sách / an toàn (KHÔNG tính vào maxRetries lỗi tạm thời, KHÔNG ghi nhận handleRecordImage(false))
+        if (isPolicyBlockError(rawMsg)) {
+          if (policyLevel === 0) {
+            // Bước a: thử lại ngay bỏ Avoid
+            policyLevel = 1;
+            updateScene(scene.id, {
+              retryInfo: 'Bị chặn vì chính sách → thử lại không kèm negative',
+            });
+            await new Promise(r => setTimeout(r, 600));
+            continue;
+          }
+
+          if (policyLevel === 1) {
+            // Bước b: AI viết lại prompt lần 1
+            policyLevel = 2;
+            updateScene(scene.id, {
+              retryInfo: 'Bị chặn → AI đang chỉnh prompt cho đúng quy định (1/2)',
+            });
+            try {
+              const rewritten = await rewritePromptForPolicy(scene.prompt, 1);
+              currentWorkingPrompt = rewritten;
+              safePromptForSave = rewritten;
+              updateScene(scene.id, {
+                retryInfo: 'Đã chỉnh prompt (1/2) → đang thử tạo lại...',
+              });
+              await new Promise(r => setTimeout(r, 600));
+              continue;
+            } catch (rewriteErr: any) {
+              const rwMsg = rewriteErr?.message || 'Lỗi chỉnh prompt';
+              updateScene(scene.id, {
+                status: 'error',
+                errorMessage: `Bị chặn vì chính sách. AI không thể chỉnh prompt: ${rwMsg}`,
+                retryInfo: undefined,
+              });
+              return { success: false };
+            }
+          }
+
+          if (policyLevel === 2) {
+            // Bước c: AI viết lại prompt lần 2 (bảo thủ hơn)
+            policyLevel = 3;
+            updateScene(scene.id, {
+              retryInfo: 'Bị chặn → AI đang chỉnh prompt cho đúng quy định (2/2)',
+            });
+            try {
+              const rewritten = await rewritePromptForPolicy(currentWorkingPrompt, 2);
+              currentWorkingPrompt = rewritten;
+              safePromptForSave = rewritten;
+              updateScene(scene.id, {
+                retryInfo: 'Đã chỉnh prompt (2/2) → đang thử tạo lại...',
+              });
+              await new Promise(r => setTimeout(r, 600));
+              continue;
+            } catch (rewriteErr: any) {
+              const rwMsg = rewriteErr?.message || 'Lỗi chỉnh prompt';
+              updateScene(scene.id, {
+                status: 'error',
+                errorMessage: `Bị chặn vì chính sách. AI không thể chỉnh prompt: ${rwMsg}`,
+                retryInfo: undefined,
+              });
+              return { success: false };
+            }
+          }
+
+          // Bước d: đã thử 2 lần chỉnh prompt mà vẫn bị chặn
+          updateScene(scene.id, {
+            status: 'error',
+            errorMessage: 'Bị chặn vì chính sách sau 2 lần AI chỉnh prompt. Sửa prompt tay rồi bấm tạo lại.',
+            retryInfo: undefined,
+          });
+          return { success: false };
+        }
+
+        // 3. Nếu rơi vào isSafetyError khác mà không bắt bởi isPolicyBlockError
         if (isSafetyError(rawMsg)) {
           updateScene(scene.id, { status: 'error', errorMessage: rawMsg, retryInfo: undefined });
           return { success: false };
+        }
+
+        // 4. Lỗi tạm thời (transient error)
+        if (!stopBatchRef.current) {
+          handleRecordImage(false, settings.modelDisplayName);
         }
 
         if (isTransientError(rawMsg) && attempt < maxRetries) {
@@ -504,6 +611,7 @@ export default function App() {
             updateScene(scene.id, { status: 'pending', retryInfo: undefined });
             return { success: false };
           }
+          attempt++;
           continue;
         }
 
@@ -515,9 +623,6 @@ export default function App() {
         return { success: false };
       }
     }
-
-    updateScene(scene.id, { status: 'pending', retryInfo: undefined });
-    return { success: false };
   };
 
   /**
@@ -542,28 +647,28 @@ export default function App() {
       pauseBatchRef.current = false;
       setActiveTab('batch');
 
-      let targetScenes: Scene[] = [];
+      let targetIds: string[] = [];
 
       if (mode === 'all') {
         setScenes(prev => prev.map(s => ({ ...s, status: 'pending', errorMessage: undefined, retryInfo: undefined })));
-        targetScenes = scenes;
+        targetIds = scenesRef.current.map(s => s.id);
       } else if (mode === 'failed') {
-        targetScenes = scenes.filter(s => s.status === 'error');
+        targetIds = scenesRef.current.filter(s => s.status === 'error').map(s => s.id);
       } else {
-        targetScenes = scenes.filter(s => s.status === 'pending' || s.status === 'error');
+        targetIds = scenesRef.current.filter(s => s.status === 'pending' || s.status === 'error').map(s => s.id);
       }
 
-      if (targetScenes.length === 0) return;
+      if (targetIds.length === 0) return;
 
       setIsGenerating(true);
       setBatch({
         isRunning: true,
         isPaused: false,
         completedInRun: 0,
-        totalInRun: targetScenes.length,
+        totalInRun: targetIds.length,
       });
 
-      for (let i = 0; i < targetScenes.length; i++) {
+      for (let i = 0; i < targetIds.length; i++) {
         if (stopBatchRef.current) break;
 
         if (usageStateRef.current.imageCount >= usageStateRef.current.dailyImageCap) {
@@ -576,7 +681,11 @@ export default function App() {
         }
         if (stopBatchRef.current) break;
 
-        const currentTarget = targetScenes[i];
+        const currentId = targetIds[i];
+        // Luôn lấy scene mới nhất từ state (qua scenesRef) theo id thay cho bản chụp cũ
+        const currentTarget = scenesRef.current.find(s => s.id === currentId);
+        if (!currentTarget) continue;
+
         const res = await executeSceneGeneration(currentTarget);
 
         setBatch(prev => ({ ...prev, completedInRun: i + 1 }));
@@ -590,7 +699,7 @@ export default function App() {
           break;
         }
 
-        if (i < targetScenes.length - 1 && settings.delaySeconds > 0 && !stopBatchRef.current) {
+        if (i < targetIds.length - 1 && settings.delaySeconds > 0 && !stopBatchRef.current) {
           await interruptibleWait(settings.delaySeconds * 1000);
         }
       }
@@ -617,8 +726,10 @@ export default function App() {
     pauseBatchRef.current = false;
     setIsGenerating(true);
     try {
-      updateScene(scene.id, { status: 'pending', errorMessage: undefined, retryInfo: undefined });
-      await executeSceneGeneration(scene);
+      // Lấy scene mới nhất từ ref
+      const freshScene = scenesRef.current.find(s => s.id === scene.id) || scene;
+      updateScene(freshScene.id, { status: 'pending', errorMessage: undefined, retryInfo: undefined });
+      await executeSceneGeneration(freshScene);
     } catch (err: any) {
       setError(err?.message || 'Regeneration failed');
     } finally {
@@ -1019,12 +1130,36 @@ export default function App() {
                       {scenes.map((scene, i) => (
                         <div key={scene.id} className="bg-[#1a1a1a] border border-[#595959] rounded-xl p-4 flex flex-col gap-2 group hover:border-[#969696] transition-colors">
                            <div className="flex justify-between items-start">
-                             <input 
-                               value={scene.title}
-                               onChange={(e) => updateScene(scene.id, { title: e.target.value })}
-                               className="bg-transparent border-none p-0 m-0 font-medium text-xs focus:outline-none w-2/3"
-                             />
-                             <div className="flex gap-2">
+                             <div className="flex items-center gap-2 w-2/3">
+                               <input 
+                                 value={scene.title}
+                                 onChange={(e) => updateScene(scene.id, { title: e.target.value })}
+                                 className="bg-transparent border-none p-0 m-0 font-medium text-xs focus:outline-none w-full"
+                               />
+                               {scene.safetyNote && (
+                                 <span 
+                                   className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-mono whitespace-nowrap cursor-help flex-shrink-0"
+                                   title={scene.originalPrompt ? `Prompt gốc: ${scene.originalPrompt}` : scene.safetyNote}
+                                 >
+                                   AI đã chỉnh prompt
+                                 </span>
+                               )}
+                             </div>
+                             <div className="flex gap-2 items-center">
+                               {scene.originalPrompt && (
+                                 <button
+                                   type="button"
+                                   onClick={() => updateScene(scene.id, {
+                                     prompt: scene.originalPrompt,
+                                     originalPrompt: undefined,
+                                     safetyNote: undefined,
+                                   })}
+                                   className="text-[10px] px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white/80 transition-colors"
+                                   title="Khôi phục lại prompt gốc trước khi AI chỉnh"
+                                 >
+                                   Khôi phục prompt gốc
+                                 </button>
+                               )}
                                <span className="text-[10px] text-white/30 font-mono">#{i+1}</span>
                                <button onClick={() => setScenes(scenes.filter(s => s.id !== scene.id))} className="opacity-0 group-hover:opacity-100 material-symbols-outlined text-sm text-red-400">delete</button>
                              </div>
@@ -1032,7 +1167,7 @@ export default function App() {
                            <textarea 
                              value={scene.prompt}
                              onChange={(e) => updateScene(scene.id, { prompt: e.target.value })}
-                             className="bg-transparent border-none p-0 m-0 text-xs text-white/70 focus:outline-none w-full resize-none h-auto"
+                             className="bg-transparent border-none p-0 m-0 text-xs text-white/70 focus:outline-none w-full resize-none h-auto font-mono"
                              rows={2}
                              placeholder="Prompt..."
                            />
@@ -1049,7 +1184,7 @@ export default function App() {
                            </div>
 
                            {scene.errorMessage && (
-                             <div className="p-2 rounded bg-red-500/10 border border-red-500/20 text-[10px] text-red-400 mt-1">
+                             <div className="p-2 rounded bg-red-500/10 border border-red-500/20 text-[10px] text-red-400 mt-1 font-mono">
                                 {scene.errorMessage}
                              </div>
                            )}
@@ -1187,7 +1322,17 @@ export default function App() {
                                scene.status === 'error' ? 'error' : 'progress_activity'}
                             </span>
                             <div className="flex flex-col">
-                              <span className="text-xs font-medium truncate max-w-[200px]">{scene.title}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-medium truncate max-w-[200px]">{scene.title}</span>
+                                {scene.safetyNote && (
+                                  <span 
+                                    className="px-1.5 py-0.2 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[9px] font-mono cursor-help"
+                                    title={scene.originalPrompt ? `Prompt gốc: ${scene.originalPrompt}` : scene.safetyNote}
+                                  >
+                                    AI đã chỉnh prompt
+                                  </span>
+                                )}
+                              </div>
                               <span className="text-[9px] text-white/40 uppercase">
                                 {scene.retryInfo ? scene.retryInfo : scene.status === 'upscaling' ? 'Applying Lanczos...' : scene.status}
                               </span>
@@ -1241,6 +1386,15 @@ export default function App() {
                                />
                             </label>
                          </div>
+
+                         {scene.safetyNote && (
+                           <div 
+                             className="absolute bottom-2.5 left-2.5 z-10 px-2 py-0.5 rounded bg-amber-500/80 border border-amber-400 text-black text-[9px] font-mono font-bold shadow backdrop-blur-sm cursor-help"
+                             title={scene.originalPrompt ? `Prompt gốc: ${scene.originalPrompt}` : scene.safetyNote}
+                           >
+                             AI đã chỉnh prompt
+                           </div>
+                         )}
 
                          <div className="absolute top-2.5 right-2.5 z-10 flex items-center gap-1.5 opacity-80 group-hover:opacity-100 transition-opacity">
                             <button

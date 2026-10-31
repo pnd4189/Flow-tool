@@ -7,7 +7,9 @@ import {
   KeyframeInfo,
   VideoModel,
   VideoResolution,
+  VideoTake,
   getActiveTake,
+  ShotPatch,
 } from '../../services/types';
 import {
   SHOT_SIZES,
@@ -44,12 +46,17 @@ interface ShotInspectorProps {
   scene?: Scene;
   characters: Character[];
   config: ProjectConfig;
+  allShots?: Shot[];
   hasPrevShot: boolean;
   hasNextShot: boolean;
   onPrevShot: () => void;
   onNextShot: () => void;
-  onUpdate: (updated: Shot) => void;
+  onPatchShot: (shotId: string, patch: ShotPatch) => void;
   onApplyRecipeToMultiple?: (recipe: ShotRecipe) => void;
+  creditRemaining?: number;
+  onDeductCredits?: (amount: number) => void;
+  isGeneratingKeyframes?: boolean;
+  onRenderingChange?: (delta: number) => void;
 }
 
 export const ShotInspector: React.FC<ShotInspectorProps> = ({
@@ -57,11 +64,16 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
   scene,
   characters,
   config,
+  allShots = [],
   hasPrevShot,
   hasNextShot,
   onPrevShot,
   onNextShot,
-  onUpdate,
+  onPatchShot,
+  creditRemaining = 6000,
+  onDeductCredits,
+  isGeneratingKeyframes = false,
+  onRenderingChange,
 }) => {
   const [collapsed, setCollapsed] = useState({
     render: false,
@@ -120,7 +132,7 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
   const isNarrationTooLong = narrationWordCount > maxNarrationWords;
 
   // Render & Lock status
-  const currentKeyframes = getShotKeyframes(shot, [shot]);
+  const currentKeyframes = getShotKeyframes(shot, allShots.length > 0 ? allShots : [shot]);
   const effRender = getEffectiveShotRenderConfig(shot, config);
   const isModifiedAfterLock = isShotModifiedAfterLock(shot, scene, characters, config, currentKeyframes);
   const activeTake = getActiveTake(shot);
@@ -137,49 +149,55 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
   };
 
   const toggleCharacter = (charId: string) => {
-    const exists = shot.characterIds.includes(charId);
-    const nextCharIds = exists
-      ? shot.characterIds.filter((id) => id !== charId)
-      : [...shot.characterIds, charId];
-    onUpdate({ ...shot, characterIds: nextCharIds, userEdited: true });
+    onPatchShot(shot.id, (s) => {
+      const exists = s.characterIds.includes(charId);
+      const nextCharIds = exists
+        ? s.characterIds.filter((id) => id !== charId)
+        : [...s.characterIds, charId];
+      return { ...s, characterIds: nextCharIds, userEdited: true };
+    });
   };
 
   const toggleEffect = (effectId: string) => {
-    const current = shot.effects || [];
-    const exists = current.includes(effectId);
-    if (exists) {
-      onUpdate({ ...shot, effects: current.filter((id) => id !== effectId), userEdited: true });
-    } else {
-      if (current.length >= 3) {
-        setRecipeNotice('Mỗi shot chỉ chọn tối đa 3 hiệu ứng!');
-        setTimeout(() => setRecipeNotice(null), 2500);
-        return;
+    onPatchShot(shot.id, (s) => {
+      const current = s.effects || [];
+      const exists = current.includes(effectId);
+      if (exists) {
+        return { ...s, effects: current.filter((id) => id !== effectId), userEdited: true };
+      } else {
+        if (current.length >= 3) {
+          setRecipeNotice('Mỗi shot chỉ chọn tối đa 3 hiệu ứng!');
+          setTimeout(() => setRecipeNotice(null), 2500);
+          return s;
+        }
+        return { ...s, effects: [...current, effectId], userEdited: true };
       }
-      onUpdate({ ...shot, effects: [...current, effectId], userEdited: true });
-    }
+    });
   };
 
   const handleApplyRecipe = (recipeId: string) => {
     const recipe = SHOT_RECIPES.find((r) => r.id === recipeId);
     if (!recipe) return;
 
-    const nextShot: Shot = {
-      ...shot,
+    onPatchShot(shot.id, (s) => ({
+      ...s,
       shotSize: recipe.shotSize,
       cameraAngle: recipe.cameraAngle,
       cameraMovement: recipe.cameraMovement,
       lens: recipe.lens,
-      lighting: recipe.lighting !== undefined ? recipe.lighting : shot.lighting,
+      lighting: recipe.lighting !== undefined ? recipe.lighting : s.lighting,
       effects: [...recipe.effects],
       userEdited: true,
-    };
-
-    onUpdate(nextShot);
+    }));
     setSelectedRecipeId(recipeId);
     setRecipeNotice(`Đã áp công thức: ${recipe.label}`);
     setTimeout(() => setRecipeNotice(null), 2500);
   };
 
+  // 4. Nối cảnh (chain): Tạo lại keyframe đầu/cuối của một shot chain
+  // Cập nhật cả slot dùng chung (start của shot sau / end của shot trước),
+  // truyền keyframe của shot liền kề làm ảnh tham chiếu khi hasContinuityRef = true.
+  // Shot liền kề đã có take thì đánh dấu stale.
   const handleRegenerateFrame = async (type: 'start' | 'end') => {
     setFrameError(null);
     if (type === 'start') setGeneratingStart(true);
@@ -195,13 +213,75 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
         refs.push(scene.locationRef.mediaId);
       }
 
-      const prompt = type === 'start' ? startPrompt : endPrompt;
-      const kf: KeyframeInfo = await generateSingleKeyframeWithRetry(prompt, config, refs);
+      const shotIndex = allShots.findIndex((s) => s.id === shot.id);
+      const prevShot = shotIndex > 0 ? allShots[shotIndex - 1] : undefined;
+      const nextShot = shotIndex < allShots.length - 1 ? allShots[shotIndex + 1] : undefined;
+
+      let promptToUse = type === 'start' ? startPrompt : endPrompt;
+
+      // Nếu tạo startKeyframe và shot này chain với prevShot: kế thừa tham chiếu từ prevShot
+      if (type === 'start' && shot.transitionIn === 'chain' && prevShot) {
+        if (prevShot.endKeyframe?.mediaId && !refs.includes(prevShot.endKeyframe.mediaId)) {
+          refs.push(prevShot.endKeyframe.mediaId);
+        }
+        promptToUse = compileKeyframePrompt(shot, scene, characters, 'start', look, config.customStyle, true);
+      }
+
+      // Nếu tạo endKeyframe: truyền keyframe start của chính shot làm tham chiếu continuity
+      if (type === 'end') {
+        const startKfMediaId = shot.startKeyframe?.mediaId || (shot.transitionIn === 'chain' ? prevShot?.endKeyframe?.mediaId : undefined);
+        if (startKfMediaId && !refs.includes(startKfMediaId)) {
+          refs.push(startKfMediaId);
+        }
+        promptToUse = compileKeyframePrompt(shot, scene, characters, 'end', look, config.customStyle, true);
+      }
+
+      const kf: KeyframeInfo = await generateSingleKeyframeWithRetry(promptToUse, config, refs);
 
       if (type === 'start') {
-        onUpdate({ ...shot, startKeyframe: kf });
+        // Cập nhật startKeyframe cho shot hiện tại
+        onPatchShot(shot.id, (s) => {
+          const updatedTakes = (s.takes || []).map((t) =>
+            t.id === (s.activeTakeId || s.takes![s.takes!.length - 1].id) ? { ...t, stale: true } : t
+          );
+          return { ...s, startKeyframe: kf, takes: updatedTakes.length > 0 ? updatedTakes : s.takes };
+        });
+
+        // Nếu shot này chain với prevShot: cập nhật luôn endKeyframe của prevShot và đánh dấu stale take của prevShot
+        if (shot.transitionIn === 'chain' && prevShot) {
+          onPatchShot(prevShot.id, (ps) => {
+            const psTakes = (ps.takes || []).map((t) =>
+              t.id === (ps.activeTakeId || ps.takes![ps.takes!.length - 1].id) ? { ...t, stale: true } : t
+            );
+            return {
+              ...ps,
+              endKeyframe: kf,
+              takes: psTakes.length > 0 ? psTakes : ps.takes,
+            };
+          });
+        }
       } else {
-        onUpdate({ ...shot, endKeyframe: kf });
+        // type === 'end': Cập nhật endKeyframe cho shot hiện tại
+        onPatchShot(shot.id, (s) => {
+          const updatedTakes = (s.takes || []).map((t) =>
+            t.id === (s.activeTakeId || s.takes![s.takes!.length - 1].id) ? { ...t, stale: true } : t
+          );
+          return { ...s, endKeyframe: kf, takes: updatedTakes.length > 0 ? updatedTakes : s.takes };
+        });
+
+        // Nếu shot tiếp theo chain với shot này (nextShot.transitionIn === 'chain'): cập nhật startKeyframe của nextShot và đánh dấu stale take của nextShot
+        if (nextShot && nextShot.transitionIn === 'chain') {
+          onPatchShot(nextShot.id, (ns) => {
+            const nsTakes = (ns.takes || []).map((t) =>
+              t.id === (ns.activeTakeId || ns.takes![ns.takes!.length - 1].id) ? { ...t, stale: true } : t
+            );
+            return {
+              ...ns,
+              startKeyframe: kf,
+              takes: nsTakes.length > 0 ? nsTakes : ns.takes,
+            };
+          });
+        }
       }
     } catch (err: unknown) {
       setFrameError(err instanceof Error ? err.message : 'Sinh keyframe thất bại');
@@ -213,14 +293,27 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
 
   // Render take mới
   const handleRenderNewTake = async (useLockedInputs: boolean) => {
-    if (isRenderingTake) return;
+    if (isRenderingTake || shot.renderStatus === 'rendering') return;
+    if (isGeneratingKeyframes) {
+      setTakeNotice('Đang trong quá trình sinh keyframe hàng loạt, vui lòng chờ.');
+      return;
+    }
     if (!currentKeyframes.isReady && !shot.lock) {
       setTakeNotice('Chưa đủ 2 keyframe đầu/cuối để render take mới.');
       return;
     }
 
+    if (effRender.cost > creditRemaining) {
+      setTakeNotice(`Không đủ credit! Cần ${effRender.cost} cr, hiện còn ${creditRemaining} cr.`);
+      return;
+    }
+
     setIsRenderingTake(true);
     setTakeNotice(null);
+    if (onRenderingChange) onRenderingChange(1);
+
+    // Đặt renderStatus 'rendering'
+    onPatchShot(shot.id, { renderStatus: 'rendering', renderError: undefined });
 
     try {
       const { take, lock } = await renderShotTake({
@@ -233,23 +326,28 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
         enableQC: true,
       });
 
-      const existingTakes = shot.takes || [];
-      const updatedTakes = [...existingTakes, take];
+      if (onDeductCredits) {
+        onDeductCredits(take.creditCost);
+      }
 
-      onUpdate({
-        ...shot,
-        takes: updatedTakes,
+      onPatchShot(shot.id, (s) => ({
+        ...s,
+        takes: [...(s.takes || []), take],
         activeTakeId: take.id,
         lock,
         renderStatus: 'done',
         renderError: undefined,
-      });
-      setTakeNotice(`Đã render thành công Take #${updatedTakes.length}!`);
+      }));
+
+      setTakeNotice(`Đã render thành công Take #${(shot.takes?.length || 0) + 1}!`);
       setTimeout(() => setTakeNotice(null), 3000);
     } catch (err: unknown) {
-      setTakeNotice(`Lỗi render take: ${err instanceof Error ? err.message : String(err)}`);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      onPatchShot(shot.id, { renderStatus: 'error', renderError: errMsg });
+      setTakeNotice(`Lỗi render take: ${errMsg}`);
     } finally {
       setIsRenderingTake(false);
+      if (onRenderingChange) onRenderingChange(-1);
     }
   };
 
@@ -265,7 +363,7 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
         resolution: effRender.resolution,
         lockedAt: Date.now(),
       };
-      onUpdate({ ...shot, lock: newLock });
+      onPatchShot(shot.id, { lock: newLock });
       setConfirmUpdateLock(false);
       setTakeNotice('Đã cập nhật bản khoá theo nội dung mới!');
       setTimeout(() => setTakeNotice(null), 3000);
@@ -282,15 +380,16 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
       if (target?.blobUrl) {
         URL.revokeObjectURL(target.blobUrl);
       }
-      const nextTakes = (shot.takes || []).filter((t) => t.id !== takeId);
-      const nextActiveId = shot.activeTakeId === takeId
-        ? (nextTakes[nextTakes.length - 1]?.id || undefined)
-        : shot.activeTakeId;
-
-      onUpdate({
-        ...shot,
-        takes: nextTakes,
-        activeTakeId: nextActiveId,
+      onPatchShot(shot.id, (s) => {
+        const nextTakes = (s.takes || []).filter((t) => t.id !== takeId);
+        const nextActiveId = s.activeTakeId === takeId
+          ? (nextTakes[nextTakes.length - 1]?.id || undefined)
+          : s.activeTakeId;
+        return {
+          ...s,
+          takes: nextTakes,
+          activeTakeId: nextActiveId,
+        };
       });
       setConfirmDeleteTakeId(null);
     } else {
@@ -312,14 +411,34 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
         endKeyframe: shot.endKeyframe,
       });
 
-      const nextTakes = (shot.takes || []).map((t) => (t.id === take.id ? { ...t, qc } : t));
-      onUpdate({ ...shot, takes: nextTakes });
+      onPatchShot(shot.id, (s) => ({
+        ...s,
+        takes: (s.takes || []).map((t) => (t.id === take.id ? { ...t, qc } : t)),
+      }));
     } catch (err: unknown) {
       setTakeNotice(`QC lỗi: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setRecheckingQCId(null);
     }
   };
+
+  const isRenderDisabled =
+    isRenderingTake ||
+    shot.renderStatus === 'rendering' ||
+    isGeneratingKeyframes ||
+    (!currentKeyframes.isReady && !shot.lock) ||
+    effRender.cost > creditRemaining;
+
+  const renderDisabledReason =
+    shot.renderStatus === 'rendering'
+      ? 'Shot này đang được render'
+      : isGeneratingKeyframes
+      ? 'Đang tạo keyframe hàng loạt'
+      : effRender.cost > creditRemaining
+      ? `Không đủ credit (cần ${effRender.cost} cr, còn ${creditRemaining} cr)`
+      : !currentKeyframes.isReady && !shot.lock
+      ? 'Thiếu keyframe đầu/cuối'
+      : undefined;
 
   return (
     <div className="flex-1 flex flex-col h-full bg-[#141417] overflow-y-auto min-h-0 p-4 space-y-4 select-none">
@@ -419,9 +538,10 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              disabled={isRenderingTake}
+              disabled={isRenderDisabled}
               onClick={() => handleRenderNewTake(true)}
-              className="px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-bold text-[11px] transition shadow"
+              className="px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white font-bold text-[11px] transition shadow"
+              title={renderDisabledReason}
             >
               Quay theo bản khoá
             </button>
@@ -472,10 +592,7 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
                 value={shot.modelOverride || ''}
                 onChange={(e) => {
                   const val = e.target.value as VideoModel | '';
-                  onUpdate({
-                    ...shot,
-                    modelOverride: val || undefined,
-                  });
+                  onPatchShot(shot.id, { modelOverride: val || undefined });
                 }}
                 className="w-full bg-[#141417] border border-[#26262b] text-[#ececef] rounded h-7 px-2 text-xs focus:border-[#f5b301] focus:outline-none"
               >
@@ -495,7 +612,7 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
                 value={shot.durationOverride || ''}
                 onChange={(e) => {
                   const val = e.target.value ? Number(e.target.value) : undefined;
-                  onUpdate({ ...shot, durationOverride: val });
+                  onPatchShot(shot.id, { durationOverride: val });
                 }}
                 className="w-full bg-[#141417] border border-[#26262b] text-[#ececef] rounded h-7 px-2 text-xs focus:border-[#f5b301] focus:outline-none"
               >
@@ -516,7 +633,7 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
                   value={shot.resolutionOverride || ''}
                   onChange={(e) => {
                     const val = e.target.value as VideoResolution | '';
-                    onUpdate({ ...shot, resolutionOverride: val || undefined });
+                    onPatchShot(shot.id, { resolutionOverride: val || undefined });
                   }}
                   className="w-full bg-[#141417] border border-[#26262b] text-[#ececef] rounded h-7 px-2 text-xs focus:border-[#f5b301] focus:outline-none"
                 >
@@ -564,9 +681,10 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  disabled={isRenderingTake}
+                  disabled={isRenderDisabled}
                   onClick={() => handleRenderNewTake(Boolean(shot.lock))}
                   className="px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black font-bold text-xs flex items-center gap-1.5 transition shadow"
+                  title={renderDisabledReason}
                 >
                   <span className={`material-symbols-outlined text-[15px] ${isRenderingTake ? 'animate-spin' : ''}`}>
                     {isRenderingTake ? 'progress_activity' : 'videocam'}
@@ -577,6 +695,11 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
                     ? `Quay take mới theo bản khoá (${effRender.cost} cr)`
                     : `Quay take đầu tiên & Khoá shot (${effRender.cost} cr)`}
                 </button>
+                {renderDisabledReason && (
+                  <span className="text-[10px] text-amber-400 font-mono">
+                    ({renderDisabledReason})
+                  </span>
+                )}
               </div>
 
               {shot.lock && (
@@ -626,7 +749,7 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            onClick={() => onUpdate({ ...shot, activeTakeId: tk.id })}
+                            onClick={() => onPatchShot(shot.id, { activeTakeId: tk.id })}
                             className={`px-2 py-0.5 rounded font-mono text-xs font-bold transition ${
                               isActive
                                 ? 'bg-amber-500 text-black'
@@ -874,7 +997,7 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
                 <input
                   type="text"
                   value={shot.actionBeat}
-                  onChange={(e) => onUpdate({ ...shot, actionBeat: e.target.value, userEdited: true })}
+                  onChange={(e) => onPatchShot(shot.id, { actionBeat: e.target.value, userEdited: true })}
                   className="w-full bg-[#141417] border border-[#26262b] rounded px-2.5 py-1 text-xs text-[#ececef] focus:border-[#f5b301] focus:outline-none"
                 />
               </div>
@@ -887,7 +1010,7 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
                 <input
                   type="text"
                   value={shot.eraLabel || ''}
-                  onChange={(e) => onUpdate({ ...shot, eraLabel: e.target.value, userEdited: true })}
+                  onChange={(e) => onPatchShot(shot.id, { eraLabel: e.target.value, userEdited: true })}
                   placeholder="VD: London, 1890"
                   className="w-full bg-[#141417] border border-[#26262b] rounded px-2.5 py-1 text-xs text-[#ececef] focus:border-[#f5b301] focus:outline-none"
                 />
@@ -903,7 +1026,7 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
               <textarea
                 rows={2}
                 value={shot.action || ''}
-                onChange={(e) => onUpdate({ ...shot, action: e.target.value, userEdited: true })}
+                onChange={(e) => onPatchShot(shot.id, { action: e.target.value, userEdited: true })}
                 placeholder="E.g.: A bicycle-powered contraption with giant canvas wings attempts to lift off on a grassy hill"
                 className="w-full bg-[#141417] border border-[#26262b] rounded px-2.5 py-1 text-xs text-[#ececef] focus:border-[#f5b301] focus:outline-none"
               />
@@ -918,7 +1041,7 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
                 <input
                   type="text"
                   value={shot.startPose}
-                  onChange={(e) => onUpdate({ ...shot, startPose: e.target.value, userEdited: true })}
+                  onChange={(e) => onPatchShot(shot.id, { startPose: e.target.value, userEdited: true })}
                   placeholder="Seated on the bicycle pedals, gripping wooden handlebar"
                   className="w-full bg-[#141417] border border-[#26262b] rounded px-2 py-1 text-[11px] text-[#ececef] focus:border-[#f5b301] focus:outline-none"
                 />
@@ -930,7 +1053,7 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
                 <input
                   type="text"
                   value={shot.endPose}
-                  onChange={(e) => onUpdate({ ...shot, endPose: e.target.value, userEdited: true })}
+                  onChange={(e) => onPatchShot(shot.id, { endPose: e.target.value, userEdited: true })}
                   placeholder="Pedaling furiously as wheels leave the grass momentarily"
                   className="w-full bg-[#141417] border border-[#26262b] rounded px-2 py-1 text-[11px] text-[#ececef] focus:border-[#f5b301] focus:outline-none"
                 />
@@ -961,7 +1084,7 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
             <Select
               label="Cỡ cảnh (Shot Size)"
               value={shot.shotSize}
-              onChange={(e) => onUpdate({ ...shot, shotSize: e.target.value, userEdited: true })}
+              onChange={(e) => onPatchShot(shot.id, { shotSize: e.target.value, userEdited: true })}
             >
               {SHOT_SIZES.map((s) => (
                 <option key={s.id} value={s.id}>{s.label}</option>
@@ -971,7 +1094,7 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
             <Select
               label="Góc máy (Angle)"
               value={shot.cameraAngle}
-              onChange={(e) => onUpdate({ ...shot, cameraAngle: e.target.value, userEdited: true })}
+              onChange={(e) => onPatchShot(shot.id, { cameraAngle: e.target.value, userEdited: true })}
             >
               {CAMERA_ANGLES.map((a) => (
                 <option key={a.id} value={a.id}>{a.label}</option>
@@ -981,7 +1104,7 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
             <Select
               label="Chuyển động (Movement 2D)"
               value={shot.cameraMovement}
-              onChange={(e) => onUpdate({ ...shot, cameraMovement: e.target.value, userEdited: true })}
+              onChange={(e) => onPatchShot(shot.id, { cameraMovement: e.target.value, userEdited: true })}
             >
               {CAMERA_MOVES.map((m) => (
                 <option key={m.id} value={m.id}>{m.label}</option>
@@ -991,7 +1114,7 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
             <Select
               label="Phối cảnh (Perspective)"
               value={shot.lens}
-              onChange={(e) => onUpdate({ ...shot, lens: e.target.value, userEdited: true })}
+              onChange={(e) => onPatchShot(shot.id, { lens: e.target.value, userEdited: true })}
             >
               {PERSPECTIVES.map((p) => (
                 <option key={p.id} value={p.id}>{p.label}</option>
@@ -1022,7 +1145,7 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
             <Select
               label="Ánh sáng 2D"
               value={shot.lighting || ''}
-              onChange={(e) => onUpdate({ ...shot, lighting: e.target.value, userEdited: true })}
+              onChange={(e) => onPatchShot(shot.id, { lighting: e.target.value, userEdited: true })}
             >
               <option value="">Theo Scene ({scene?.lightingDefault || 'Ban ngày trong trẻo'})</option>
               {LIGHTINGS.map((lt) => (
@@ -1033,7 +1156,7 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
             <Select
               label="Thời tiết (Weather)"
               value={shot.weather || 'clear'}
-              onChange={(e) => onUpdate({ ...shot, weather: e.target.value, userEdited: true })}
+              onChange={(e) => onPatchShot(shot.id, { weather: e.target.value, userEdited: true })}
             >
               {WEATHERS.map((w) => (
                 <option key={w.id} value={w.id}>{w.label}</option>
@@ -1121,7 +1244,7 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
               <textarea
                 rows={2}
                 value={shot.narration || ''}
-                onChange={(e) => onUpdate({ ...shot, narration: e.target.value, userEdited: true })}
+                onChange={(e) => onPatchShot(shot.id, { narration: e.target.value, userEdited: true })}
                 placeholder="VD: Vào năm 1890, một phát minh kỳ lạ bằng bánh răng hơi nước đã làm rung chuyển cả London..."
                 className="w-full bg-[#18181d] border border-[#26262b] rounded px-2.5 py-1.5 text-xs text-[#ececef] focus:border-[#f5b301] focus:outline-none"
               />
@@ -1144,7 +1267,7 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
                 <input
                   type="text"
                   value={shot.audioDialogue}
-                  onChange={(e) => onUpdate({ ...shot, audioDialogue: e.target.value, userEdited: true })}
+                  onChange={(e) => onPatchShot(shot.id, { audioDialogue: e.target.value, userEdited: true })}
                   placeholder='E.g. "It is going to fly!"'
                   className="w-full bg-[#141417] border border-[#26262b] rounded px-2 py-1 text-xs text-[#ececef] focus:border-[#f5b301] focus:outline-none"
                 />
@@ -1157,7 +1280,7 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
                 <input
                   type="text"
                   value={shot.audioSfx}
-                  onChange={(e) => onUpdate({ ...shot, audioSfx: e.target.value, userEdited: true })}
+                  onChange={(e) => onPatchShot(shot.id, { audioSfx: e.target.value, userEdited: true })}
                   placeholder="E.g. Steam whoosh, gear ticking"
                   className="w-full bg-[#141417] border border-[#26262b] rounded px-2 py-1 text-xs text-[#ececef] focus:border-[#f5b301] focus:outline-none"
                 />
@@ -1170,7 +1293,7 @@ export const ShotInspector: React.FC<ShotInspectorProps> = ({
                 <input
                   type="text"
                   value={shot.ambient}
-                  onChange={(e) => onUpdate({ ...shot, ambient: e.target.value, userEdited: true })}
+                  onChange={(e) => onPatchShot(shot.id, { ambient: e.target.value, userEdited: true })}
                   placeholder="E.g. Victorian street murmurs, wind"
                   className="w-full bg-[#141417] border border-[#26262b] rounded px-2 py-1 text-xs text-[#ececef] focus:border-[#f5b301] focus:outline-none"
                 />

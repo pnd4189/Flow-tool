@@ -75,3 +75,10 @@ Lượt chạy 300 prompt (dài nhất mới 30); Flow có giới hạn ảnh m�
 | `p8`, `p9` | Khôi phục bước 4 thủ công; đồng hồ nghỉ theo mốc thời gian |
 
 Dữ liệu thử: `test-data/prompts300.txt` (300 prompt dạng "N. nội dung", mỗi prompt thứ 10 có `--ar 9:16`), `test-data/test_prompts.txt` (4 prompt trộn nhiều kiểu định dạng). `prompts300.txt` có 8 prompt trùng nhau (do sinh ngẫu nhiên), tiện để thử nút "Xoá trùng".
+
+## Sửa 2026-10-31 (`p10-parser-safety`)
+
+- Tách prompt: file dạng `--- SCENE 001 ---` + các đoạn `Camera:`/`Subject:`… cách nhau dòng trống bị tách thành 1200 prompt thay vì 120. Giờ dòng tiêu đề đứng riêng, lặp lại từ 2 lần, sở hữu mọi đoạn bên dưới. Đã kiểm trên tool thật với `KTT_T04_ban-ngan_vi_image_prompts.txt`: báo 120 prompt. `prompts300.txt` vẫn 300, `test_prompts.txt` vẫn 4.
+- Dòng tiêu đề tài liệu ("# My prompts") đứng một mình không còn thành 1 prompt thừa (`p11-heading-only-title`). Nếu mọi khối đều chỉ có tiêu đề thì vẫn dùng tiêu đề làm prompt như cũ.
+- Bài kiểm tra `test-scripts/prompt-parser.test.ts` đếm prompt trên các file mẫu ở `test-data/`, và file KTT_T04 120 cảnh khi ổ Drive có gắn. Chạy bằng `flow-builder/scripts/check-snapshot.sh tool-snapshots/effect-image`. 18 lỗi kiểu có sẵn từ trước (ví dụ `Math.imMath` trong `overlays.ts`, thiếu kiểu `mp4-muxer`) ghi ở `test-scripts/tsc-known-errors.txt`; chỉ lỗi mới làm trượt.
+- Chính sách: lọc mục nhạy cảm khỏi negative trước khi nối `Avoid:`; AI viết lại prompt tối đa 2 lần (cả Bước 2 và chế độ tự động) rồi mới báo lỗi. Đã chạy thật 10 cảnh đầu KTT_T04 kèm nguyên dòng Negative: 10/10 ảnh xong; vài cảnh bị Flow chặn và được AI viết lại prompt rồi tạo thành công (nhãn "AI đã chỉnh prompt").

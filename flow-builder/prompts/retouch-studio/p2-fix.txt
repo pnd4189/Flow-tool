@@ -1,0 +1,19 @@
+Fix the proven AI integration correctness issues below. Preserve all working CPU selection, semantic face protection, classic backgrounds, history and actual SDK calls. Patch existing owners; no fake results.
+
+1. handleGenerateAiEditPreview never calls ensureFaceProtectionPreflight, although default face protection is ON. Await it BEFORE acquiring the generation busy token. Use its effective mask and recompute editable bounding box after it returns. If everything is protected, show a clear inline message and do not generate. Use this effective mask for guide, compositing and verification.
+
+2. Source reference cache is keyed only by currentRevision, but uploads a CROPPED image. Selecting another region in the same document reuses the wrong crop. Cache key must include source document/revision and every crop/padding transform field, or simply upload a fresh source crop per operation. Guide always fresh. Use PNG losslessly for source crop and guide instead of JPEG. Keep valid SDK option names.
+
+3. Late-result bug: App.handleSetCandidatePreview unconditionally overwrites preview.sourceRevision with the CURRENT ref, falsely labeling an old generation as current. Capture request source revision before the first await; attach that exact sourceRevision to the preview. App must reject mismatched incoming revisions without relabeling. Check request id/cancel state after generation AND after advisory inspection, before installing a preview. Apply the same protection and cancellation to AI backgrounds. A late result must never replace a new upload/edit/undo or revive a canceled preview.
+
+4. Remove ALL window/ bare alert/confirm/prompt calls; sandbox blocks modals. Show honest inline errors/toasts. Retry only temporary network/429/5xx errors at most twice; policy/quota/invalid-input errors fail directly. Clear timeout timers in finally. Add real 120s timeout to AI backdrop generation too. Preserve original after all failures/cancellation.
+
+5. Hardcoded 'Photorealistic finish', 'Pristine photography', and photographic-only prompt enhancement will change 2D art into a photo. Preserve the source medium/style (2D stays 2D; photos stay photos) unless the user explicitly requests a style change. Remove unconditional photographic conversion instructions from local edits, backgrounds and prompt assistance.
+
+6. inspectAiEditPreview returns a fabricated score 90 and EXCELLENT alignment on failure, or defaults 85 on invalid values. Delete fabricated ratings. Send before and after thumbnails with the actual requested edit; validate JSON. On failure return an explicit unavailable/unknown report, no invented score, no claim 'no seams'. UI must reflect unknown status. Pixel preservation remains enforced by code, not by AI opinion. Verify actual protected/outside differences by comparison, rather than reporting counts as if they proved quality.
+
+7. aiBackgroundService draws opaque grayscale selectionMask with source-in, making the optional shadow cover the whole canvas. Convert grayscale to a real alpha silhouette before tint/blur/offset. Default shadow OFF. Inspection colors must be view-only and never change an exported/accepted candidate; hide a no-op inspection control until it has actual preview behavior. Use cover-fit for differing generated background ratios instead of nonuniform stretching; original dimensions remain native. Reject clearly mismatched local generated crop ratios before mapping.
+
+8. In every compositor/cutout/background, any protectionMask red value >0 means exact source RGBA is copied; don't partially recolor protected antialiased brush edges using p/255. Feather applies only to unprotected editable boundaries. Keep semantic automatic face masks so the fixed white halo does not return.
+
+After patch preserve useful user-facing generation progress, preview Apply/Cancel and separate accepted/preview downloads. Do not remove requested edit modes. End marker RETOUCH_P2_FIX.

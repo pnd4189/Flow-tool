@@ -135,21 +135,69 @@ export function isTransientVideoError(msg: string): boolean {
 
 export function isQuotaOrCreditError(msg: string): boolean {
   const lower = msg.toLowerCase();
-  return lower.includes('quota') || lower.includes('credit') || lower.includes('insufficient');
+  return (
+    lower.includes('quota') ||
+    lower.includes('credit') ||
+    lower.includes('insufficient') ||
+    lower.includes('hạn mức') ||
+    lower.includes('không đủ') ||
+    lower.includes('hết credit') ||
+    lower.includes('tín dụng') ||
+    lower.includes('số dư')
+  );
 }
 
 export function isSafetyOrPolicyError(msg: string): boolean {
   const lower = msg.toLowerCase();
-  return lower.includes('safety') || lower.includes('policy') || lower.includes('blocked');
+  return (
+    lower.includes('safety') ||
+    lower.includes('policy') ||
+    lower.includes('blocked') ||
+    lower.includes('vi phạm') ||
+    lower.includes('chính sách') ||
+    lower.includes('không an toàn') ||
+    lower.includes('sensitive') ||
+    lower.includes('prohibited')
+  );
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * Viết lại prompt video cho an toàn qua Flow.generate.text (thinkingLevel: 'low', timeout: 60s)
+ */
+async function rewritePromptForSafety(originalPrompt: string): Promise<string> {
+  const systemInstruction = `You are an expert prompt safety engineer for generative AI video models.
+Rewrite the provided video generation prompt so that it strictly adheres to all safety, policy, and content moderation rules.
+Rules:
+- Preserve the 2D animation style, characters, setting, and the core visual action intent.
+- Tone down or remove graphic violence, dangerous weapons, sensitive themes, real person names, or explicit words.
+- Use softer, cinematic, stylized animation terminology.
+- Output ONLY the rewritten English prompt text without quotes, commentary, or markdown.`;
+
+  const textPromise = Flow.generate.text(
+    `Rewrite this video prompt to be completely policy-safe:\n${originalPrompt}`,
+    {
+      systemInstruction,
+      thinkingLevel: 'low',
+    }
+  );
+
+  const timeoutPromise = new Promise<{ text: string }>((_, reject) => {
+    setTimeout(() => reject(new Error('AI rewrite prompt timed out (60s)')), 60000);
+  });
+
+  const { text } = await Promise.race([textPromise, timeoutPromise]);
+  const cleaned = text.trim().replace(/^["']|["']$/g, '');
+  return cleaned || originalPrompt;
+}
+
+/**
  * Render một Take mới cho shot:
- * - Nếu dùng bản khoá (useLock = true), dùng đúng prompt, 2 keyframe, model, duration, resolution trong lock.
- * - Nếu không khoá, tự động tạo ShotLock lần đầu.
- * - Tự động chạy QC bằng Gemini (0 credit) nếu enableQC = true.
+ * - Chỉ dùng lock khi useLock && shot.lock && shot.lock.firstFrameMediaId === currentKeyframes.firstFrameMediaId && shot.lock.lastFrameMediaId === currentKeyframes.lastFrameMediaId
+ * - Nếu keyframe đã đổi, biên dịch lại prompt + keyframe hiện tại và trả về lock MỚI.
+ * - Timeout 900 giây (chỉ tính thời gian Flow.generate.video). Ném lỗi bắt đầu 'TIMEOUT:'
+ * - Policy error: tự động rewrite prompt qua AI và thử lại đúng 1 lần.
  */
 export async function renderShotTake(params: {
   shot: Shot;
@@ -169,7 +217,13 @@ export async function renderShotTake(params: {
   let durationToUse: number;
   let resolutionToUse: VideoResolution;
 
-  if (useLock && shot.lock) {
+  const canUseLock =
+    useLock &&
+    Boolean(shot.lock) &&
+    shot.lock?.firstFrameMediaId === currentKeyframes.firstFrameMediaId &&
+    shot.lock?.lastFrameMediaId === currentKeyframes.lastFrameMediaId;
+
+  if (canUseLock && shot.lock) {
     promptToUse = shot.lock.prompt;
     firstMediaId = shot.lock.firstFrameMediaId || currentKeyframes.firstFrameMediaId!;
     lastMediaId = shot.lock.lastFrameMediaId || currentKeyframes.lastFrameMediaId!;
@@ -191,128 +245,138 @@ export async function renderShotTake(params: {
 
   let attempt = 0;
   const maxTransientRetries = 1;
+  let hasTriedSafetyRewrite = false;
 
   while (true) {
-    const renderPromise = (async () => {
-      const videoRes = await Flow.generate.video({
-        prompt: promptToUse,
-        modelDisplayName: modelToUse,
-        aspectRatio: config.aspectRatio,
-        durationSeconds: durationToUse,
-        resolution: resolutionToUse,
-        firstFrameImageMediaId: firstMediaId,
-        lastFrameImageMediaId: lastMediaId,
-      });
-
-      // Tạo Blob và blobUrl
-      const binaryString = atob(videoRes.base64);
-      const len = binaryString.length;
-      const bytes = new Uint8Array(len);
-      const chunkSize = 8192;
-      for (let i = 0; i < len; i += chunkSize) {
-        const end = Math.min(i + chunkSize, len);
-        for (let j = i; j < end; j++) {
-          bytes[j] = binaryString.charCodeAt(j);
-        }
-      }
-
-      const mimeType = 'video/mp4';
-      const blob = new Blob([bytes], { type: mimeType });
-      const blobUrl = URL.createObjectURL(blob);
-
-      const takeId = `take_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-
-      const newTake: VideoTake = {
-        id: takeId,
-        mediaId: videoRes.mediaId,
-        blobUrl,
-        sizeBytes: blob.size,
-        model: modelToUse,
-        durationSeconds: durationToUse,
-        resolution: resolutionToUse,
-        aspectRatio: config.aspectRatio,
-        creditCost,
-        renderedAt: Date.now(),
-        promptUsed: promptToUse,
-        firstFrameMediaId: firstMediaId,
-        lastFrameMediaId: lastMediaId,
-      };
-
-      // Tạo hoặc cập nhật lock
-      const effectiveLock: ShotLock = shot.lock && useLock
-        ? shot.lock
-        : {
-            prompt: promptToUse,
-            firstFrameMediaId: firstMediaId,
-            lastFrameMediaId: lastMediaId,
-            model: modelToUse,
-            durationSeconds: durationToUse,
-            resolution: resolutionToUse,
-            lockedAt: Date.now(),
-          };
-
-      // Chạy QC nếu được kích hoạt
-      if (enableQC) {
-        try {
-          const look = getLook(config.lookId);
-          const qc = await evaluateTakeQC({
-            take: newTake,
-            actionText: shot.action || shot.actionBeat,
-            lookLabel: look.label,
-            characters: characters.filter((c) => shot.characterIds.includes(c.id)),
-            startKeyframe: shot.startKeyframe,
-            endKeyframe: shot.endKeyframe,
-          });
-          newTake.qc = qc;
-        } catch (qcErr) {
-          console.warn('QC failed without blocking render:', qcErr);
-          newTake.qc = {
-            onModel: 70,
-            style2D: 70,
-            continuity: 70,
-            action: 70,
-            totalScore: 70,
-            artifacts: [],
-            verdict: 'review',
-            note: `QC lỗi: ${qcErr instanceof Error ? qcErr.message : String(qcErr)}`.slice(0, 100),
-            checkedAt: Date.now(),
-          };
-        }
-      }
-
-      return { take: newTake, lock: effectiveLock };
-    })();
+    // Timeout 900 giây chỉ tính riêng cho Flow.generate.video
+    const videoCallPromise = Flow.generate.video({
+      prompt: promptToUse,
+      modelDisplayName: modelToUse,
+      aspectRatio: config.aspectRatio,
+      durationSeconds: durationToUse,
+      resolution: resolutionToUse,
+      firstFrameImageMediaId: firstMediaId,
+      lastFrameImageMediaId: lastMediaId,
+    });
 
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => {
-        reject(new Error('TIMEOUT_600S'));
-      }, 600000);
+        reject(new Error('TIMEOUT: Quá 15 phút chưa nhận được video; có thể Flow vẫn tạo xong và đã trừ credit. Kiểm tra thư viện Flow (Nạp lại từ thư viện) trước khi render lại.'));
+      }, 900000);
     });
 
+    let videoRes: { base64: string; mimeType: string; mediaId: string };
     try {
-      const result = await Promise.race([renderPromise, timeoutPromise]);
-      return result;
+      videoRes = await Promise.race([videoCallPromise, timeoutPromise]);
     } catch (err: unknown) {
       const rawMsg = err instanceof Error ? err.message : String(err);
 
-      if (rawMsg === 'TIMEOUT_600S') {
-        throw new Error('Quá thời gian chờ (600s); video có thể vẫn được tạo, kiểm tra thư viện Flow');
+      if (rawMsg.startsWith('TIMEOUT:')) {
+        throw new Error(rawMsg);
       }
 
       if (isQuotaOrCreditError(rawMsg)) {
         throw new Error(`QUOTA_ERROR: ${rawMsg}`);
       }
 
+      // Xử lý bị chặn vì chính sách: thử rewrite an toàn qua AI đúng 1 lần
       if (isSafetyOrPolicyError(rawMsg)) {
-        throw new Error(`SAFETY_ERROR: ${rawMsg}`);
+        if (!hasTriedSafetyRewrite) {
+          hasTriedSafetyRewrite = true;
+          try {
+            promptToUse = await rewritePromptForSafety(promptToUse);
+            continue; // Thử lại đúng 1 lần với prompt mới
+          } catch (rewriteErr) {
+            throw new Error(`Bị chặn vì chính sách sau khi AI chỉnh prompt; sửa hành động/lời thoại của shot rồi render lại (${rewriteErr instanceof Error ? rewriteErr.message : String(rewriteErr)})`);
+          }
+        } else {
+          throw new Error('Bị chặn vì chính sách sau khi AI chỉnh prompt; sửa hành động/lời thoại của shot rồi render lại');
+        }
       }
 
       if (attempt < maxTransientRetries && isTransientVideoError(rawMsg)) {
         attempt++;
         await sleep(20000);
-      } else {
-        throw new Error(rawMsg);
+        continue;
+      }
+
+      throw new Error(rawMsg);
+    }
+
+    // Xử lý tạo Blob và video take sau khi đã hoàn tất Flow.generate.video
+    const binaryString = atob(videoRes.base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    const chunkSize = 8192;
+    for (let i = 0; i < len; i += chunkSize) {
+      const end = Math.min(i + chunkSize, len);
+      for (let j = i; j < end; j++) {
+        bytes[j] = binaryString.charCodeAt(j);
       }
     }
+
+    const mimeType = 'video/mp4';
+    const blob = new Blob([bytes], { type: mimeType });
+    const blobUrl = URL.createObjectURL(blob);
+
+    const takeId = `take_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+    const newTake: VideoTake = {
+      id: takeId,
+      mediaId: videoRes.mediaId,
+      blobUrl,
+      sizeBytes: blob.size,
+      model: modelToUse,
+      durationSeconds: durationToUse,
+      resolution: resolutionToUse,
+      aspectRatio: config.aspectRatio,
+      creditCost,
+      renderedAt: Date.now(),
+      promptUsed: promptToUse,
+      firstFrameMediaId: firstMediaId,
+      lastFrameMediaId: lastMediaId,
+    };
+
+    // Tạo lock mới nếu cấu hình/keyframe thay đổi hoặc chưa có
+    const effectiveLock: ShotLock = {
+      prompt: promptToUse,
+      firstFrameMediaId: firstMediaId,
+      lastFrameMediaId: lastMediaId,
+      model: modelToUse,
+      durationSeconds: durationToUse,
+      resolution: resolutionToUse,
+      lockedAt: Date.now(),
+    };
+
+    // QC chạy sau video generation độc lập ngoài timeout 900s
+    if (enableQC) {
+      try {
+        const look = getLook(config.lookId);
+        const qc = await evaluateTakeQC({
+          take: newTake,
+          actionText: shot.action || shot.actionBeat,
+          lookLabel: look.label,
+          characters: characters.filter((c) => shot.characterIds.includes(c.id)),
+          startKeyframe: shot.startKeyframe,
+          endKeyframe: shot.endKeyframe,
+        });
+        newTake.qc = qc;
+      } catch (qcErr) {
+        console.warn('QC failed without blocking render:', qcErr);
+        newTake.qc = {
+          onModel: 70,
+          style2D: 70,
+          continuity: 70,
+          action: 70,
+          totalScore: 70,
+          artifacts: [],
+          verdict: 'review',
+          note: `QC lỗi: ${qcErr instanceof Error ? qcErr.message : String(qcErr)}`.slice(0, 100),
+          checkedAt: Date.now(),
+        };
+      }
+    }
+
+    return { take: newTake, lock: effectiveLock };
   }
 }

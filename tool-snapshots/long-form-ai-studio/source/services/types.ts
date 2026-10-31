@@ -52,6 +52,7 @@ export interface KeyframeInfo {
   mediaId: string;
   thumbBase64: string; // JPEG <= 420px, 0.8
   promptUsed?: string;
+  aspectRatio?: '16:9' | '9:16'; // Tỉ lệ khung hình lúc tạo để phát hiện khi đổi Long/Short
 }
 
 // Kết quả kiểm tra chất lượng AI (services/qcService.ts, 0 credit)
@@ -157,7 +158,7 @@ export interface Shot {
   startKeyframe?: KeyframeInfo;
   endKeyframe?: KeyframeInfo;
 
-  // ĐỢT 5: NHIỀU LẦN QUAY (TAKES) & KHOÁ SHOT
+  // NHIỀU LẦN QUAY (TAKES) & KHOÁ SHOT
   takes?: VideoTake[];
   activeTakeId?: string;
   lock?: ShotLock;
@@ -175,6 +176,11 @@ export interface Shot {
   renderStatus?: 'idle' | 'rendering' | 'done' | 'error';
   renderError?: string;
 }
+
+export type ShotsUpdateFn = (prev: Shot[]) => Shot[];
+export type ShotsUpdate = Shot[] | ShotsUpdateFn;
+
+export type ShotPatch = Partial<Shot> | ((s: Shot) => Shot);
 
 /** Helper lấy take active của một shot, fallback tương thích video đơn */
 export function getActiveTake(shot: Shot): VideoTake | undefined {

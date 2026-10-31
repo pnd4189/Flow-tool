@@ -1,0 +1,16 @@
+SỬA "Làm mờ phông" và "Tách nền" khi CHƯA chọn vùng (tự khoanh người). CHỈ sửa services/segmentationService.ts, components/QuickFixPanel.tsx và thêm services/personPointsService.ts. KHÔNG đổi file khác, KHÔNG đổi hành vi khi người dùng đã chọn vùng.
+
+Lỗi đo trên ảnh thật (người đứng, 1920x2560): ensurePersonSelection chỉ chấm 1 điểm ở ngực, mặt nạ SlimSAM lớn nhất bỏ sót chân phải và bàn tay phải → hai chỗ đó bị làm mờ như phông.
+
+1. services/segmentationService.ts — segmentCandidatesAtPoint thêm tham số cuối tuỳ chọn extraPoints?: Array<{ x: number; y: number }> (chuẩn hoá 0..1). Khi có extraPoints: input_points = [[[pixelX, pixelY], ...các điểm phụ đổi sang pixel của prep]] và input_labels = [[1, 1, ...]] (tất cả là điểm dương, cùng số lượng điểm). Không có extraPoints thì giữ nguyên y hệt như hiện tại. Mọi caller cũ không đổi.
+
+2. services/personPointsService.ts (mới) — export async function detectPersonBodyPoints(sourceCanvas): Promise<Array<{ x: number; y: number }>>. Thu nhỏ ảnh tối đa 1024px, gọi Flow.generate.text giống detectFaceContours (images, thinkingLevel 'low', timeout 60 giây). Prompt: trả DUY NHẤT mảng JSON [{"x":..,"y":..}] toạ độ 0..1000 của 4–6 điểm nằm CHẮC CHẮN bên trong thân người chính (to nhất) trong ảnh: giữa ngực, bụng, giữa đùi trái, giữa đùi phải, giữa cánh tay trên trái, giữa cánh tay trên phải; bỏ qua bộ phận bị khuất hoặc ngoài khung; mỗi điểm cách mép người ít nhất vài phần trăm; không có người thì []. Parse an toàn (bóc khỏi ```), lọc điểm ngoài 0..1000, đổi về 0..1, tối đa 6 điểm. Lỗi/timeout → trả [] (không throw).
+
+3. components/QuickFixPanel.tsx ensurePersonSelection:
+- Chạy song song detectFaceContours và detectPersonBodyPoints (Promise.allSettled).
+- Điểm chính giữ như cũ (từ mặt, hoặc 0.5/0.55). Nếu có điểm thân: gọi segmentCandidatesAtPoint(..., normX, normY, status, currentRevision, bodyPoints).
+- Chọn ứng viên: trong các ứng viên có diện tích < 85% ảnh, lấy ứng viên chứa nhiều điểm prompt nhất (đọc pixel mặt nạ tại từng điểm, >127 là chứa); hoà thì lấy cái lớn hơn. Không ứng viên nào hợp lệ thì throw như cũ.
+- Không có điểm thân (AI lỗi) thì chạy đúng như cũ (1 điểm, ứng viên lớn nhất).
+- Ghi onLogDiagnostic('info', `Tự khoanh người: ${số điểm} điểm, mặt nạ ${tỉ lệ %} ảnh, chứa ${k}/${n} điểm`).
+
+KIỂM TRA: build không lỗi; ảnh người đứng toàn thân chưa chọn vùng, bấm "Làm mờ phông" → cả hai chân và hai tay đều nét, phông mờ; "Tách nền" giữ đủ người.

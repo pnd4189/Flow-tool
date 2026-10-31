@@ -1,0 +1,10 @@
+One focused repair in existing components/RightSidebar.tsx, preserving all other functionality and the selection-race fix. Real photograph QA of reshape_body produced unwanted bright magenta outline strokes on the jacket. These came from passing the second magenta-tinted guide reference into generation; this is an actual downloaded output, not speculation. Text saying 'no magenta' did not prevent it. Do not attempt to hide artifacts or claim this result was good.
+
+For prompt_edit and reshape_body ONLY, use a CLEAN reference route:
+- Upload ONLY unmarkedCanvas as the reference; do not upload or pass markedGuideCanvas for these two modes.
+- Build the prompt for ONE authentic unmarked source reference. Explain the intended editable bounding rectangle using normalized coordinates within this padded crop, derived from currentEditableBox, transform.cropX/Y, offsetX/Y and paddedW/H. Do NOT mention any magenta guide or draw any colored marker.
+- Ask for the actual requested visual modification to this clean source (body silhouette/waist reduction for reshape_body), same framing, scale, lighting and medium; leave every unrelated detail alone. Return only a clean edited image, no outlines, arrows, labels or annotation. Explicitly allow body contour changes in the specified rectangle while preserving authentic person, clothing and pose. Do not let generic 'exact scale/material' phrasing cancel the requested slimming.
+- Keep exact current selection minus protected pixels as the final composite mask. The generator can edit surrounding crop context internally, but only that mask is accepted. Keep full native output, pixel-preservation and revision guards.
+- Existing object removal/replacement/etc may retain their existing source+guide route and instructions; don't regress those verified workflows.
+
+Preserve the explicit Execute/Apply/preview/export state, real changed-pixel measurement, honest inspection and all background/color/geometry/session controls. No new dependencies, API keys, new tool or backend. Check imports/types; no invented visual QA claims. Finish with RETOUCH_CLEAN_REFERENCE_DONE.

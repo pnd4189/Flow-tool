@@ -1,0 +1,15 @@
+SỬA "Gọn mặt" khi ảnh có NHIỀU khuôn mặt. CHỈ sửa services/faceSlimService.ts, components/QuickFixPanel.tsx (handleFaceSlim) và components/RightSidebar.tsx (nhánh op 'face_slim'). KHÔNG đổi gì khác.
+
+Lỗi: applyFaceSlim kéo giãn dải nền tới cx ± (F + 0.45F) mà không biết mặt khác. Ảnh hai người sát má nhau → má của người bên cạnh bị kéo giãn (kể cả chế độ "mặt lớn nhất"), tức là tự ý sửa mặt người khác.
+
+1. services/faceSlimService.ts — applyFaceSlim thêm tham số cuối tuỳ chọn otherFaces?: FaceContour[]. Trước vòng lặp, với mỗi bên tính giới hạn:
+   - Chỉ xét mặt khác có khoảng dọc [o.eyeY - 0.3*(o.chinY-o.eyeY), o.chinY + 0.35*(o.chinY-o.eyeY)] giao với [startY, endY].
+   - Bên phải: room = min(o.leftX - cx) với các mặt có o.leftX > cx; bên trái: room = min(cx - o.rightX) với các mặt có o.rightX < cx. Không có mặt nào thì room = Infinity.
+   - M_side = Math.min(0.45 * F_side, room - F_side - 0.05 * F_side).
+   - Nếu M_side < 0.1 * F_side thì KHÔNG nắn bên đó (bỏ qua toàn bộ pixel bên đó, giữ nguyên nguồn) và đếm skippedSides++.
+   - Dùng M_side này thay cho 0.45*F ở leftLimitX/rightLimitX và công thức stretch.
+   Thêm vào FaceSlimResult: skippedSides: number. Không có otherFaces thì kết quả y hệt hiện tại.
+2. components/QuickFixPanel.tsx handleFaceSlim: mỗi lần gọi applyFaceSlim truyền otherFaces = contours.filter(c => c !== face) (TẤT CẢ mặt phát hiện được, kể cả chế độ "mặt lớn nhất"). Nếu tổng skippedSides > 0 thì mô tả bản xem trước thêm " Bỏ qua ${n} bên má vì sát mặt người khác."
+3. components/RightSidebar.tsx nhánh face_slim: applyFaceSlim(runningCanvas, targetFace, op.strength, contours.slice(1)).
+
+KIỂM TRA: build không lỗi; ảnh 1 người kết quả không đổi; ảnh 2 người sát nhau, "Gọn mặt" chế độ mặt lớn nhất → mặt người kia không đổi pixel nào.

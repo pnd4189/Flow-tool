@@ -1,0 +1,13 @@
+Restore required user controls accidentally removed by the compact UI rewrite. Do NOT change the working generation, masks, protection, color, session or geometry algorithms. The old state/handlers still exist in RightSidebar, but current background JSX only exposes four fixed quick-effect buttons; users cannot choose a color, gradient, blur radius or uploaded background. This is a regression against the accepted editor scope.
+
+Implement a compact focused BackgroundPanel component with collapsible sections, wired to existing state and real handlers:
+- Solid color: accessible color picker + validated HEX text + small preset swatches; preview uses actual selected color.
+- Gradient: 2 real color pickers/HEX inputs and direction (horizontal/vertical/diagonal); preview uses actual chosen values.
+- User background image: real file input PNG/JPEG/WebP, button 'Dung anh nen rieng' with proper Vietnamese, clear Cover/Contain fit choices; existing handleUploadBgFile/decode route, errors visible and release temporary Blob URLs. Keep source subject pixels exact. Show selected background filename/thumbnail so fit can be changed and previewed again without re-uploading.
+- Background blur: real 0..40px radius slider with value and Preview.
+- Retain actual Remove background PNG alpha action.
+- Retain AI backdrop prompt and generation; restore model buttons Nano Banana Pro and Nano Banana2.1 and contact shadow intensity when enabled. Keep shadow default OFF. No inspection toggle unless it actually works without altering the candidate.
+
+Use existing ensureFaceProtectionPreflight for ALL previews and preserve request source revision. No silent whole-image replacement, no fake upload/generation. No native alert/confirm/prompt or localStorage/ZIP. Default mask dilation0 remains; removal dilation is explicit user action.
+
+Also restore JPEG export matte color picker and quality slider (50..100) wired to actual exportQuality state setter; PNG untouched. Clearly distinguish accepted image vs preview export, keep native-resolution color rendering. Explain briefly that JPEG has no transparency. Keep overall charcoal/teal interface, avoid purple marketing styles and avoid duplicating controls. Normal headings Vietnamese. Do not remove any other implemented functionality while making this scoped UI patch. End marker RETOUCH_BG_CONTROLS.

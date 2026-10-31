@@ -1,0 +1,1 @@
+SỬA 1 DÒNG trong components/QuickFixPanel.tsx (khối diagnostics của "Thon gọn thân", khoảng dòng 218): đổi lại khoá `outsidePreservedCount: res.outsidePreservedCount` thành `outsideMaskPreservedPixels: res.outsidePreservedCount` (kiểu diagnostics chỉ có trường outsideMaskPreservedPixels). KHÔNG đổi gì khác, KHÔNG xoá chú thích, KHÔNG sửa file khác.

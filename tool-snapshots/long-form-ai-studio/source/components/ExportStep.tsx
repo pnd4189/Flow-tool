@@ -1,15 +1,16 @@
 import React, { useState, useMemo } from 'react';
-import { Flow } from 'flow-sdk';
 import {
   Shot,
   Scene,
   ProjectConfig,
   getActiveTake,
+  ShotsUpdate,
 } from '../services/types';
 import { getShotKeyframes, checkTakeStaleness } from '../services/renderService';
 import {
   generateTakeExportFilename,
   downloadPostProductionKit,
+  downloadSingleKitFile,
 } from '../services/exportKit';
 import {
   DownloadItem,
@@ -22,7 +23,7 @@ interface ExportStepProps {
   config: ProjectConfig;
   scenes: Scene[];
   shots: Shot[];
-  onUpdateShots: (updatedShots: Shot[]) => void;
+  onUpdateShots: (update: ShotsUpdate) => void;
   onShowToast: (text: string, type?: 'success' | 'error' | 'info') => void;
 }
 
@@ -44,9 +45,27 @@ export const ExportStep: React.FC<ExportStepProps> = ({
   // Trạng thái tải gói hậu kỳ 4 file
   const [isDownloadingKit, setIsDownloadingKit] = useState(false);
   const [kitDownloadProgress, setKitDownloadProgress] = useState<string>('');
+  const [kitFailedFiles, setKitFailedFiles] = useState<Array<{
+    filename: string;
+    error: string;
+    content: string;
+    mimeType: 'application/json' | 'text/plain' | 'text/markdown';
+  }>>([]);
+  const [retryingFileName, setRetryingFileName] = useState<string | null>(null);
 
   // Nạp lại blob cho take
   const [reloadingShotId, setReloadingShotId] = useState<string | null>(null);
+
+  // Hộp thoại cảnh báo chọn mediaId khác
+  const [pendingReloadConflict, setPendingReloadConflict] = useState<{
+    shotId: string;
+    shotOrder: number;
+    takeIndex: number;
+    expectedMediaId?: string;
+    selectedMediaId: string;
+    blobUrl: string;
+    sizeBytes: number;
+  } | null>(null);
 
   // Đánh dấu các shot cần nạp lại blob sau khi người dùng bấm tải
   const [highlightNeedReloadIds, setHighlightNeedReloadIds] = useState<Set<string>>(new Set());
@@ -103,6 +122,51 @@ export const ExportStep: React.FC<ExportStepProps> = ({
     }
   };
 
+  // Helper thực hiện áp dụng video đã nạp vào state mới nhất bằng onUpdateShots(prev => ...)
+  const applyReloadedVideoToShot = (
+    shotId: string,
+    mediaId: string,
+    blobUrl: string,
+    sizeBytes: number
+  ) => {
+    onUpdateShots((prevShots: Shot[]) =>
+      prevShots.map((s) => {
+        if (s.id !== shotId) return s;
+        const currentActive = getActiveTake(s);
+        const updatedTakes = (s.takes || []).map((t) => {
+          if (currentActive && t.id === currentActive.id) {
+            return {
+              ...t,
+              mediaId,
+              blobUrl,
+              sizeBytes,
+            };
+          }
+          return t;
+        });
+
+        return {
+          ...s,
+          takes: updatedTakes,
+          video: s.video
+            ? {
+                ...s.video,
+                mediaId,
+                blobUrl,
+                sizeBytes,
+              }
+            : undefined,
+        };
+      })
+    );
+
+    setHighlightNeedReloadIds((prev) => {
+      const next = new Set(prev);
+      next.delete(shotId);
+      return next;
+    });
+  };
+
   // Nạp lại blob cho take từ thư viện Flow
   const handleReloadBlobForTake = async (shot: Shot) => {
     const activeTake = getActiveTake(shot);
@@ -111,33 +175,47 @@ export const ExportStep: React.FC<ExportStepProps> = ({
     setReloadingShotId(shot.id);
     try {
       const reloaded = await reloadTakeBlobFromGallery();
-      const updatedTakes = (shot.takes || []).map((t) => {
-        if (t.id === activeTake.id) {
-          return {
-            ...t,
-            mediaId: reloaded.mediaId,
-            blobUrl: reloaded.blobUrl,
-            sizeBytes: reloaded.sizeBytes,
-          };
-        }
-        return t;
-      });
+      const takeIdx = (shot.takes && activeTake)
+        ? Math.max(1, shot.takes.findIndex((t) => t.id === activeTake.id) + 1)
+        : 1;
 
-      const nextShots = shots.map((s) =>
-        s.id === shot.id ? { ...s, takes: updatedTakes } : s
-      );
-      onUpdateShots(nextShots);
-      setHighlightNeedReloadIds((prev) => {
-        const next = new Set(prev);
-        next.delete(shot.id);
-        return next;
-      });
+      // Nếu video chọn có mediaId khác take.mediaId thì KHÔNG ghi đè ngay, hiện cảnh báo
+      if (activeTake.mediaId && reloaded.mediaId !== activeTake.mediaId) {
+        setPendingReloadConflict({
+          shotId: shot.id,
+          shotOrder: shot.order,
+          takeIndex: takeIdx,
+          expectedMediaId: activeTake.mediaId,
+          selectedMediaId: reloaded.mediaId,
+          blobUrl: reloaded.blobUrl,
+          sizeBytes: reloaded.sizeBytes,
+        });
+        return;
+      }
+
+      // Khớp mediaId -> Áp dụng ngay
+      applyReloadedVideoToShot(shot.id, reloaded.mediaId, reloaded.blobUrl, reloaded.sizeBytes);
       onShowToast(`Đã nạp lại video cho Shot #${shot.order} từ thư viện Flow!`, 'success');
     } catch (err: unknown) {
       onShowToast(err instanceof Error ? err.message : 'Nạp lại video thất bại', 'error');
     } finally {
       setReloadingShotId(null);
     }
+  };
+
+  const handleConfirmConflictUse = () => {
+    if (!pendingReloadConflict) return;
+    const { shotId, shotOrder, selectedMediaId, blobUrl, sizeBytes } = pendingReloadConflict;
+    applyReloadedVideoToShot(shotId, selectedMediaId, blobUrl, sizeBytes);
+    onShowToast(`Đã gán video mới cho Shot #${shotOrder}!`, 'success');
+    setPendingReloadConflict(null);
+  };
+
+  const handleCancelConflict = () => {
+    if (pendingReloadConflict?.blobUrl) {
+      URL.revokeObjectURL(pendingReloadConflict.blobUrl);
+    }
+    setPendingReloadConflict(null);
   };
 
   /**
@@ -262,6 +340,7 @@ export const ExportStep: React.FC<ExportStepProps> = ({
     if (isDownloadingKit) return;
     setIsDownloadingKit(true);
     setKitDownloadProgress('Đang tạo và tải 4 file hậu kỳ...');
+    setKitFailedFiles([]);
 
     try {
       const res = await downloadPostProductionKit({
@@ -274,12 +353,36 @@ export const ExportStep: React.FC<ExportStepProps> = ({
         },
       });
 
-      onShowToast(`Đã tải đủ 4 file Gói Hậu Kỳ (${res.downloadedFiles.join(', ')})`, 'success');
+      if (res.failedFiles.length > 0) {
+        setKitFailedFiles(res.failedFiles);
+        onShowToast(`Đã tải ${res.downloadedFiles.length} file; còn ${res.failedFiles.length} file lỗi cần tải lại.`, 'error');
+      } else {
+        onShowToast(`Đã tải đủ 4 file Gói Hậu Kỳ (${res.downloadedFiles.join(', ')})`, 'success');
+      }
     } catch (err: unknown) {
       onShowToast(err instanceof Error ? err.message : 'Tải gói hậu kỳ thất bại', 'error');
     } finally {
       setIsDownloadingKit(false);
       setKitDownloadProgress('');
+    }
+  };
+
+  // Tải lại riêng 1 file hậu kỳ bị lỗi
+  const handleRetrySingleKitFile = async (failedFile: {
+    filename: string;
+    error: string;
+    content: string;
+    mimeType: 'application/json' | 'text/plain' | 'text/markdown';
+  }) => {
+    setRetryingFileName(failedFile.filename);
+    try {
+      await downloadSingleKitFile(failedFile);
+      setKitFailedFiles((prev) => prev.filter((f) => f.filename !== failedFile.filename));
+      onShowToast(`Đã tải lại thành công ${failedFile.filename}!`, 'success');
+    } catch (err: unknown) {
+      onShowToast(`Tải lại thất bại: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      setRetryingFileName(null);
     }
   };
 
@@ -307,6 +410,47 @@ export const ExportStep: React.FC<ExportStepProps> = ({
             <span className="text-[10px] text-slate-400 italic">
               (Không chặn xuất bản — bạn vẫn có thể tải các clip hiện có)
             </span>
+          </div>
+        )}
+
+        {/* Modal cảnh báo xung đột mediaId khi nạp lại từ thư viện */}
+        {pendingReloadConflict && (
+          <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="max-w-md w-full bg-[#18181d] border border-amber-500/60 rounded-xl p-4 shadow-2xl space-y-3 font-mono text-xs">
+              <div className="flex items-center gap-2 text-amber-300 font-bold text-sm border-b border-[#26262b] pb-2">
+                <span className="material-symbols-outlined text-lg">warning</span>
+                <span>Cảnh báo khớp video Take</span>
+              </div>
+
+              <p className="text-slate-200 text-[12px] font-sans leading-relaxed">
+                Video vừa chọn có mã ID <span className="font-mono text-amber-300">...{pendingReloadConflict.selectedMediaId.slice(-8)}</span>,
+                không phải take #{pendingReloadConflict.takeIndex} của shot #{pendingReloadConflict.shotOrder} (mã cũ: <span className="font-mono text-slate-400">...{pendingReloadConflict.expectedMediaId?.slice(-8) || 'chưa có'}</span>).
+              </p>
+
+              <div className="p-2.5 rounded bg-[#101014] border border-[#26262b] text-[11px] text-slate-300 space-y-1">
+                <div>• Dung lượng: {(pendingReloadConflict.sizeBytes / (1024 * 1024)).toFixed(1)} MB</div>
+                <div className="text-slate-400 italic font-sans">
+                  Bạn có chắc muốn dùng video này làm clip của shot #{pendingReloadConflict.shotOrder}?
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#26262b]">
+                <button
+                  type="button"
+                  onClick={handleCancelConflict}
+                  className="px-3 py-1.5 rounded bg-[#25252b] hover:bg-[#303038] text-slate-300 font-medium transition"
+                >
+                  Huỷ
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmConflictUse}
+                  className="px-3.5 py-1.5 rounded bg-amber-500 hover:bg-amber-400 text-black font-bold transition shadow"
+                >
+                  Vẫn dùng video này
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -560,6 +704,40 @@ export const ExportStep: React.FC<ExportStepProps> = ({
             <div className="p-2.5 bg-amber-950/60 border border-amber-500/40 rounded text-amber-300 text-xs font-mono flex items-center gap-2 animate-pulse">
               <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>
               <span>{kitDownloadProgress}</span>
+            </div>
+          )}
+
+          {/* Danh sách file hậu kỳ bị lỗi kèm nút tải lại riêng */}
+          {kitFailedFiles.length > 0 && (
+            <div className="p-3 bg-red-950/40 border border-red-500/50 rounded-lg space-y-2 font-mono text-xs">
+              <div className="flex items-center gap-2 text-red-300 font-bold">
+                <span className="material-symbols-outlined text-base">error</span>
+                <span>Có {kitFailedFiles.length} file chưa tải được:</span>
+              </div>
+              <div className="space-y-1.5">
+                {kitFailedFiles.map((ff) => (
+                  <div
+                    key={ff.filename}
+                    className="flex items-center justify-between p-2 rounded bg-[#16161b] border border-[#26262b] text-[11px]"
+                  >
+                    <div>
+                      <span className="text-white font-semibold">{ff.filename}</span>
+                      <span className="text-red-400 block text-[10px] mt-0.5">Lỗi: {ff.error}</span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={retryingFileName === ff.filename}
+                      onClick={() => handleRetrySingleKitFile(ff)}
+                      className="px-2.5 py-1 rounded bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs flex items-center gap-1 transition shadow"
+                    >
+                      <span className={`material-symbols-outlined text-[13px] ${retryingFileName === ff.filename ? 'animate-spin' : ''}`}>
+                        {retryingFileName === ff.filename ? 'progress_activity' : 'refresh'}
+                      </span>
+                      Tải lại file này
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

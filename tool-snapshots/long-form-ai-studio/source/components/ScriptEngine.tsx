@@ -103,6 +103,15 @@ export const ScriptEngine: React.FC<ScriptEngineProps> = ({
   const [writingProgressText, setWritingProgressText] = useState('');
   const abortWritingRef = useRef(false);
 
+  // Trạng thái lưu scene/shot đã viết dở dang khi bị lỗi giữa chừng
+  const [partialWritingState, setPartialWritingState] = useState<{
+    completedScenes: Scene[];
+    completedShots: Shot[];
+    failedSceneIndex: number;
+    accumulatedContext: string;
+    errorMessage: string;
+  } | null>(null);
+
   const [proposedCharacters, setProposedCharacters] = useState<any[]>([]);
 
   const [isPolishingAI, setIsPolishingAI] = useState(false);
@@ -206,9 +215,10 @@ export const ScriptEngine: React.FC<ScriptEngineProps> = ({
       const shiftedShots = newShots.map((s, idx) => ({
         ...s,
         order: baseOrder + idx + 1,
+        transitionIn: idx === 0 ? ('cut' as const) : s.transitionIn,
       }));
-      const { shots: varied } = enforceVariety([...shots, ...shiftedShots]);
-      onUpdateScenesShots([...scenes, ...newScenes], varied);
+      const { shots: variedNew } = enforceVariety(shiftedShots);
+      onUpdateScenesShots([...scenes, ...newScenes], [...shots, ...variedNew]);
       notify(`Đã thêm ${newScenes.length} scene và ${newShots.length} shot vào cuối storyboard.`, 'success');
     }
   };
@@ -224,6 +234,7 @@ export const ScriptEngine: React.FC<ScriptEngineProps> = ({
     setIsGeneratingOutline(true);
     setOutline(null);
     setProposedCharacters([]);
+    setPartialWritingState(null);
 
     try {
       const chosenNarrator = narratorSelection === 'ai_propose'
@@ -255,19 +266,27 @@ export const ScriptEngine: React.FC<ScriptEngineProps> = ({
     }
   };
 
-  const handleStartDetailedWriting = async () => {
+  // Viết chi tiết tuần tự, hỗ trợ tiếp tục từ scene startIndex
+  const runDetailedWritingLoop = async (
+    startIndex: number,
+    initialScenes: Scene[],
+    initialShots: Shot[],
+    initialContext: string
+  ) => {
     if (!outline || outline.scenes.length === 0) return;
 
     abortWritingRef.current = false;
     setIsWritingDetails(true);
-    setCurrentWritingSceneIdx(0);
+    setOutlineError(null);
+    setPartialWritingState(null);
 
-    const generatedScenes: Scene[] = [];
-    const generatedShots: Shot[] = [];
-    let globalOrder = 1;
-    let accumulatedContext = '';
+    const generatedScenes: Scene[] = [...initialScenes];
+    const generatedShots: Shot[] = [...initialShots];
+    let globalOrder = initialShots.length + 1;
+    let accumulatedContext = initialContext;
+    let hadError = false;
 
-    for (let scIdx = 0; scIdx < outline.scenes.length; scIdx++) {
+    for (let scIdx = startIndex; scIdx < outline.scenes.length; scIdx++) {
       if (abortWritingRef.current) break;
 
       setCurrentWritingSceneIdx(scIdx);
@@ -345,14 +364,27 @@ export const ScriptEngine: React.FC<ScriptEngineProps> = ({
 
         accumulatedContext += `\nScene ${scIdx + 1} (${scOutline.title}): ${scOutline.beats.join(', ')}`;
       } catch (err: unknown) {
-        setOutlineError(`Lỗi ở scene ${scIdx + 1}: ${err instanceof Error ? err.message : String(err)}`);
+        hadError = true;
+        const realErrorMsg = err instanceof Error ? err.message : String(err);
+        setOutlineError(`Lỗi ở scene ${scIdx + 1} (${scOutline.title}): ${realErrorMsg}`);
+
+        // LƯU TRẠNG THÁI DỞ DANG VÀ TUYỆT ĐỐI KHÔNG THAY ĐỔI STORYBOARD HIỆN TẠI
+        setPartialWritingState({
+          completedScenes: generatedScenes,
+          completedShots: generatedShots,
+          failedSceneIndex: scIdx,
+          accumulatedContext,
+          errorMessage: realErrorMsg,
+        });
         break;
       }
     }
 
-    if (!abortWritingRef.current && generatedShots.length > 0) {
+    // CHỈ KHI VIẾT XONG HẾT TOÀN BỘ VÀ KHÔNG LỖI MỚI THAY STORYBOARD VÀ BÁO HOÀN TẤT
+    if (!abortWritingRef.current && !hadError && generatedShots.length > 0) {
       const { shots: variedShots, modifiedCount } = enforceVariety(generatedShots);
       onUpdateScenesShots(generatedScenes, variedShots);
+      setPartialWritingState(null);
 
       if (modifiedCount > 0) {
         notify(`Hoàn tất kịch bản (${generatedScenes.length} scenes, ${generatedShots.length} shots). Đã tự đa dạng hoá ${modifiedCount} shot camera!`, 'success');
@@ -363,6 +395,44 @@ export const ScriptEngine: React.FC<ScriptEngineProps> = ({
 
     setIsWritingDetails(false);
     setWritingProgressText('');
+  };
+
+  const handleStartDetailedWriting = async () => {
+    setPartialWritingState(null);
+    await runDetailedWritingLoop(0, [], [], '');
+  };
+
+  // 9. Xử lý nút 1: Thêm N scene đã viết xong vào cuối storyboard:
+  // Chỉ chạy enforceVariety cho các shot MỚI (shot cũ giữ nguyên camera/keyframe/take); shot mới đầu tiên có transitionIn 'cut'
+  const handleAppendPartialToStoryboard = () => {
+    if (!partialWritingState || partialWritingState.completedShots.length === 0) return;
+    const { completedScenes: newScenes, completedShots: newShots } = partialWritingState;
+
+    const baseOrder = shots.length;
+    const shiftedShots = newShots.map((s, idx) => ({
+      ...s,
+      order: baseOrder + idx + 1,
+      transitionIn: idx === 0 ? ('cut' as const) : s.transitionIn,
+    }));
+
+    // Chỉ chạy enforceVariety riêng cho các shot MỚI
+    const { shots: variedNewShots } = enforceVariety(shiftedShots);
+
+    const combinedScenes = [...scenes, ...newScenes];
+    // Shot cũ giữ nguyên 100%, không re-run variety lên shot cũ
+    const combinedShots = [...shots, ...variedNewShots];
+
+    onUpdateScenesShots(combinedScenes, combinedShots);
+    notify(`Đã thêm ${newScenes.length} scene (${newShots.length} shot) đã viết xong vào cuối Storyboard.`, 'success');
+    setPartialWritingState(null);
+    setOutlineError(null);
+  };
+
+  // Xử lý nút 2: Thử lại từ scene lỗi (tiếp tục từ scene k với ngữ cảnh đã có)
+  const handleRetryFromFailedScene = async () => {
+    if (!partialWritingState) return;
+    const { completedScenes, completedShots, failedSceneIndex, accumulatedContext } = partialWritingState;
+    await runDetailedWritingLoop(failedSceneIndex, completedScenes, completedShots, accumulatedContext);
   };
 
   const handleCancelWritingDetails = () => {
@@ -804,8 +874,37 @@ export const ScriptEngine: React.FC<ScriptEngineProps> = ({
             </div>
 
             {outlineError && (
-              <div className="p-2 rounded bg-red-950/60 border border-red-500/40 text-red-300 text-[11px] font-mono">
-                {outlineError}
+              <div className="p-2.5 rounded bg-red-950/70 border border-red-500/50 text-red-200 text-xs font-mono space-y-2">
+                <div className="flex items-center gap-1.5 text-red-300 font-bold">
+                  <span className="material-symbols-outlined text-base">error</span>
+                  <span>{outlineError}</span>
+                </div>
+
+                {partialWritingState && (
+                  <div className="pt-2 border-t border-red-500/30 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] text-slate-300">
+                      Đã viết xong {partialWritingState.completedScenes.length} scene ({partialWritingState.completedShots.length} shot) trước khi lỗi.
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleAppendPartialToStoryboard}
+                        className="px-2.5 py-1 rounded bg-[#2a2a32] hover:bg-[#353540] text-amber-300 border border-amber-500/40 text-xs font-semibold flex items-center gap-1 transition shadow-sm"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">playlist_add</span>
+                        Thêm {partialWritingState.completedScenes.length} scene đã viết vào cuối
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRetryFromFailedScene}
+                        className="px-2.5 py-1 rounded bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold flex items-center gap-1 transition shadow"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">refresh</span>
+                        Thử lại từ scene {partialWritingState.failedSceneIndex + 1}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

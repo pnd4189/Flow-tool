@@ -1,0 +1,8 @@
+Sửa đúng phần tính lõi Cc trong services/faceSlimService.ts applyFaceSlim, KHÔNG đổi gì khác.
+
+Đo thật: AI trả khoé miệng trái lệch vào trong khoảng 15px nên lõi bên trái dừng ở x=831 trong khi khoé miệng thật ở x≈815 → khoé miệng vẫn bị nắn nhẹ. Không được dựa hoàn toàn vào toạ độ khoé miệng của AI.
+
+Đổi công thức lõi mỗi bên thành:
+  base = 0.65 * F;
+  Cc = (khoé miệng hợp lệ) ? Math.min(0.8 * F, Math.max(base, Math.abs(mouthX - cx) + 0.15 * F)) : base;
+(F, mouthX, cx như hiện tại; cập nhật chú thích đầu hàm cho đúng.)

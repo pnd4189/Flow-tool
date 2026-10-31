@@ -1,0 +1,10 @@
+SỬA "Gọn mặt" (services/faceSlimService.ts và 1 dòng trong components/QuickFixPanel.tsx). KHÔNG đổi gì khác.
+
+Đo trên ảnh thật (đầu hơi nghiêng): lõi giữ nguyên chỉ rộng 0.5*F mỗi bên nên khoé miệng trái (cách sống mũi 64px, F trái 113px) rơi vào vùng nắn → khoé miệng bị đổi 524 px. Mức 8% cũng quá nhẹ (viền chỉ dịch 6–9px). Đã thử bản sửa dưới đây trên cùng ảnh: miệng đổi 0 px, hàm/má gọn rõ ở 12%.
+
+1. detectFaceContours: yêu cầu AI trả thêm "mouthLeftX", "mouthRightX" (khoé miệng trái/phải, chuẩn hoá 0..1000) trong cùng object; mô tả rõ trong prompt. Đổi ra pixel. Hợp lệ khi leftX < mouthLeftX < noseX < mouthRightX < rightX; không hợp lệ hoặc thiếu thì để undefined (không bỏ cả khuôn mặt). Thêm 2 trường tuỳ chọn này vào kiểu FaceContour.
+2. applyFaceSlim: lõi mỗi bên Cc = (khoé miệng hợp lệ) ? Math.min(0.8*F, Math.max(0.5*F, Math.abs(mouthX - cx) + 0.1*F)) : 0.5*F, với mouthX = mouthLeftX cho bên trái, mouthRightX cho bên phải. Phần còn lại của công thức giữ nguyên.
+3. Pixel thuộc lõi (d <= Cc): KHÔNG nội suy, giữ nguyên pixel nguồn (chỉ đếm coreCount); như vậy coreChanged luôn 0, không bị lỗi làm tròn số thực.
+4. QuickFixPanel: mức mặc định "Gọn mặt" đổi từ 8 thành 12 (thanh vẫn 0–15%). Mô tả bản xem trước thêm "lõi mở tới khoé miệng" khi có khoé miệng.
+
+KIỂM TRA: build không lỗi; ảnh chân dung nghiêng nhẹ, "Gọn mặt" 12% ra bản xem trước, vùng miệng và mắt không đổi pixel nào, viền hàm dịch vào rõ.

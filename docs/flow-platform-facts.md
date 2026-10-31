@@ -19,6 +19,7 @@ Ghi ngày 2026-10-30 (một phần từ 2026-10-29), từ các phép thử thậ
 - Không có API cho: số dư credit, số ảnh đã tạo trong ngày, đổi tên/xoá media, Scenebuilder, kéo dài video, seed, negative prompt. Số dư thật chỉ xem được ở menu tài khoản trên trang Flow (chụp màn hình; chữ không có trong snapshot).
 - Chrome giãn `setInterval` khi tab chạy nền quá ~5 phút (còn khoảng 1 lần/phút; suy từ cách Chrome hoạt động, chưa đo riêng). Vòng lặp dùng `await` thì không bị chậm: 30 prompt chạy với tab ẩn 10 phút vẫn ~20 giây/clip. Đồng hồ đếm ngược phải tính theo mốc thời gian (`Date.now()`), không đếm số nhịp.
 - `navigator.wakeLock` có thể bị từ chối trong iframe này (suy luận, chưa kiểm). Nhắc user tắt chế độ ngủ của máy.
+- Phiên Chrome profile pndhtcv dùng cho Retouch Studio trả `null` cho cả WebGL1/WebGL2. MediaPipe phân vùng không chạy được kể cả một số đường CPU vì vẫn cần dịch vụ GPU; đây là trạng thái môi trường này, không phải giới hạn mọi tài khoản Flow. SlimSAM qua Transformers.js/ONNX WASM CPU một luồng đã chạy thật trong tool; xem `tool-retouch-studio.md`.
 
 ## SDK đã dùng
 
@@ -31,6 +32,8 @@ Ghi ngày 2026-10-30 (một phần từ 2026-10-29), từ các phép thử thậ
   - model: `Omni 1.1 Flash`, `Veo 3.1 - Lite`, `Veo 3.1 - Fast`, `Veo 3.1 - Quality`; `aspectRatio` chỉ `16:9` hoặc `9:16`; `resolution` `360p` hoặc `720p`;
   - ảnh đầu/cuối và ảnh tham chiếu loại trừ nhau;
   - đã kiểm thật: Omni 360p 4 s với ảnh đầu = mediaId của ảnh, ~40 s, trả mp4 h264 640×360 24 fps có tiếng AAC, 1,5 MB, trừ 4 credit. Chưa kiểm: Veo, 720p, 8–10 s, 9:16 kèm cắt, nhiều biến thể.
+
+- Ảnh bị chặn vì chính sách báo bằng tiếng Việt: "Lượt tạo này có thể vi phạm các chính sách của chúng tôi…". Bộ dò lỗi phải khớp "vi phạm"/"chính sách", không chỉ 'safety'/'policy'. Nối danh sách negative có chữ nudity/gore/blood/celebrity vào prompt (`Avoid: …`) gây chặn oan (đo 2026-10-31). Prompt tả máu me trực tiếp lại không bị chặn, nên đừng đoán bộ lọc theo mức độ nội dung.
 
 ## Credit (Ultra)
 

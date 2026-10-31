@@ -1,0 +1,36 @@
+SỬA 2 LỖI. CHỈ sửa đúng các chỗ nêu, KHÔNG viết lại file, giữ nguyên mọi tính năng khác (4 chế độ tự động, hiệu ứng, xuất MP4, tải về...). Không dùng window.confirm/alert/prompt, không localStorage.
+
+LỖI 1 — services/promptParser.ts nhận 1200 prompt cho file chỉ có 120 cảnh.
+File dạng:
+--- SCENE 001 ---
+(dòng trống)
+Camera: ...
+(dòng trống)
+Story DNA: ...
+(dòng trống)
+... Setting/Composition/Subject/Style/Lighting/Atmosphere ...
+Negative: ...
+--- SCENE 002 ---
+Nguyên nhân: EXPLICIT_MARKER_REGEX bắt buộc có 1 ký tự [:\-\s] sau marker nên dòng "--- SCENE 001 ---" (hết dòng) không khớp; mỗi đoạn sau dòng trống bị tách thành 1 prompt (10 đoạn x 120 cảnh).
+Sửa trong parsePromptTextAsync (bước 4, thuật toán tổng hợp) đúng như sau:
+a) EXPLICIT_MARKER_REGEX: đổi đuôi `)[:\-\s]/i` thành `)(?:[:\-\s]|$)/i`.
+b) Ở chỗ lấy titleHint từ marker: `match[0].replace(/^[-\s]+|[:\-\s]+$/g, '').trim()` (bỏ cả gạch đầu dòng, để tiêu đề là "SCENE 001").
+c) Ngay sau `const chunkSizeLines = 60;` thêm:
+  const isHeaderOnlyLine = (t: string): boolean => {
+    if (MD_HEADER_REGEX.test(t)) return true;
+    const m = t.match(EXPLICIT_MARKER_REGEX);
+    return !!m && t.slice(m[0].length).trim() === '';
+  };
+  const headerBlocks = allLines.filter((l) => isHeaderOnlyLine(l.trim())).length >= 2;
+  let draftOwnedByHeader = false;
+d) Nhánh đoạn văn đổi thành `} else if (prevLineWasBlankOrHr && currentDraft && !(headerBlocks && draftOwnedByHeader)) {`
+e) Trong `if (isBoundary || !currentDraft) {` thêm dòng đầu: `draftOwnedByHeader = headerBlocks && isHeaderOnlyLine(trimmed);`
+Ý nghĩa: dòng tiêu đề đứng riêng (lặp lại >= 2 lần) sở hữu mọi đoạn bên dưới cho tới tiêu đề kế tiếp; các file khác giữ nguyên cách tách cũ. Đã chạy thử thuật toán này: file 120 cảnh ra 120 prompt (tiêu đề SCENE 001..SCENE 120, dòng Negative vào ô negative), file 300 prompt đánh số vẫn 300, file hỗn hợp 4 prompt vẫn 4.
+
+LỖI 2 — ảnh bị chặn vì chính sách ("Lượt tạo này có thể vi phạm các chính sách của chúng tôi").
+Đo thật ở tool khác cùng loại prompt: nối nguyên danh sách negative "Avoid: ... no nudity or suggestive exposure, no graphic gore or blood splatter, no real public figure or celebrity face" làm Flow chặn; bỏ phần đó thì 5/5 cảnh tạo được.
+a) services/genQueue.ts, constructSentPrompt: trước khi nối "Avoid:", lọc negative: tách theo dấu phẩy/chấm phẩy/xuống dòng, bỏ mục khớp /nud|naked|sex|suggestive|explicit|gore|blood|violen|corpse|dead|kill|weapon|celebrit|public figure|real person|minor|child/i; còn rỗng thì không nối "Avoid:".
+b) rewritePromptForSafety(unsafePrompt, round: 1|2 = 1): systemInstruction mới: "You rewrite image-generation prompts that were blocked by a content-safety filter so they pass while keeping the same scene. Keep: characters' appearance, setting, composition, camera, lighting, color palette, art style and mood. Replace or soften anything graphic or sensitive: blood, gore, wounds, corpses and death become implied (shadows, aftermath hints, fallen objects, frightened reactions); sexual or suggestive cues, nudity, bedroom intimacy become neutral and fully clothed; real people or celebrities become fictional characters; weapons aimed at people become non-threatening. Drop any 'Avoid:' list that names sensitive things. Never add words like nudity, gore, blood, sex, kill in any form, not even as negatives. Output English only, one paragraph, no quotes, no markdown, no explanation." Round 2 thêm: "The previous rewrite was still blocked: be clearly more conservative, keep only the safe visual essentials."
+c) Step2ImageGen.tsx và services/autoPilot.ts: thay cờ một lần `safetyRewritten` bằng bộ đếm safetyRounds (tối đa 2): bị chặn lần 1 -> viết lại round 1, bị chặn lần 2 -> viết lại round 2 từ bản đã viết lại, vẫn bị chặn -> lỗi cuối "Bị chặn vì chính sách sau 2 lần AI chỉnh prompt. Sửa prompt tay rồi tạo lại." Các lần bị chặn không tính vào số lần thử lỗi tạm thời. Hiện trạng thái "Bị chặn → AI đang chỉnh prompt (1/2)". Khi thành công bằng prompt đã viết lại, lưu prompt đã gửi vào manifest như hiện nay và gắn nhãn nhỏ "AI đã chỉnh prompt" trên ô ảnh.
+
+KIỂM TRA: build không lỗi; dán file mẫu 2 cảnh dạng "--- SCENE 001 ---" như trên thì Bước 1 báo đúng 2 prompt, tiêu đề SCENE 001 / SCENE 002, negative nằm ở ô negative; file "1. ...\n2. ..." vẫn tách như cũ.

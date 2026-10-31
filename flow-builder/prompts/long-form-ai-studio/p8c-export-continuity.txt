@@ -1,0 +1,17 @@
+SỬA CÁC LỖI CÒN LẠI (xuất file, nối cảnh, an toàn dữ liệu). CHỈ sửa đúng các chỗ nêu, KHÔNG viết lại file, giữ nguyên mọi tính năng khác. Không dùng window.confirm/alert/prompt, không localStorage.
+
+1. services/exportKit.ts
+- concat_list.txt và tổng thời lượng chỉ tính shot CÓ take active; shot chưa render liệt kê trong phần "Thiếu" của manifest/storyboard thay vì đưa vào concat.
+- Vòng tải bộ file: mỗi file bọc try/catch; lỗi thì ghi vào danh sách failedFiles và tải tiếp file sau; trả { downloadedFiles, failedFiles } và giao diện hiện file lỗi kèm nút tải lại riêng file đó.
+2. components/RenderQueue.tsx: tải video từ bước Render dùng generateTakeExportFilename (giống concat_list) thay cho generateVideoFilename, để tên file khớp danh sách ghép.
+3. components/ExportStep.tsx "Nạp lại từ thư viện": nếu video chọn có mediaId khác take.mediaId thì không ghi đè ngay; hiện cảnh báo "Video này không phải take #… của shot #…" với nút "Vẫn dùng video này" và "Huỷ". Ghi bằng cập nhật theo id shot từ state mới nhất (onUpdateShots(prev => ...)).
+4. Nối cảnh (chain):
+- App.tsx handleToggleTransitionIn: khi đổi cut → chain thì xoá startKeyframe riêng của shot B (để dùng chung endKeyframe của shot A), và nếu shot B đã có take thì đánh dấu take active stale = true.
+- ShotInspector tạo lại keyframe đầu/cuối của một shot chain: cập nhật cả slot dùng chung (start của shot sau / end của shot trước) qua applyKeyframeToShots hoặc tương đương, và truyền keyframe của shot liền kề làm ảnh tham chiếu khi hasContinuityRef = true. Shot liền kề đã có take thì đánh dấu stale.
+5. Đổi định dạng Long/Short (16:9 ↔ 9:16) khi đã có keyframe hoặc take: hiện cảnh báo "N keyframe/take đang ở tỉ lệ cũ — cần tạo lại" và đánh dấu stale các take; keyframe ghi lại aspectRatio lúc tạo để so.
+6. services/director.ts: nếu AI chỉ trả id hiệu ứng không hợp lệ thì GIỮ hiệu ứng cũ của shot (không thay bằng []). Sửa import LookItem cho đúng nơi khai báo.
+7. components/layout/ShotInspector.tsx: thêm import type VideoTake còn thiếu.
+8. services/scriptWriter.ts: khi AI trả nhiều hoặc ít shot hơn mục tiêu, cắt/ghép cho đúng số mục tiêu (cắt bớt beat cuối, hoặc tách beat dài nhất), không chỉ Math.max(1, …).
+9. components/ScriptEngine.tsx handleAppendPartialToStoryboard: chỉ chạy enforceVariety cho các shot MỚI (shot cũ giữ nguyên camera/keyframe/take); shot mới đầu tiên có transitionIn 'cut'.
+
+KIỂM TRA: build không lỗi; xuất bộ hậu kỳ khi còn shot chưa render thì concat_list chỉ có shot đã render; đổi một shot từ cut sang chain thì timeline hiện keyframe dùng chung và take cũ hiện "lệch mạch".

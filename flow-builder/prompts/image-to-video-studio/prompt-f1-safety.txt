@@ -1,0 +1,28 @@
+SỬA LỖI: ảnh bị chặn vì chính sách thì "Retry failed" / tạo lại / đổi model vẫn lỗi mãi.
+
+Nguyên nhân đã đo thật: Flow trả lỗi tiếng Việt "Lượt tạo này có thể vi phạm các chính sách của chúng tôi...". Hàm isSafetyError trong App.tsx chỉ dò 'safety'/'policy'/'blocked' nên không nhận ra lỗi này, và mọi lần thử lại đều gửi y nguyên prompt. Prompt bị chặn chủ yếu do App.tsx nối nguyên danh sách negative vào prompt ("Avoid: ... no nudity or suggestive exposure, no graphic gore or blood splatter, no real public figure or celebrity face ..."): bỏ dòng Avoid đi thì 5/5 cảnh trước đó bị chặn đều tạo được.
+
+CHỈ sửa đúng các chỗ nêu dưới đây, KHÔNG viết lại file, giữ nguyên mọi tính năng khác (Video Studio, Download Center, Usage, Lưu/Mở phiên, AI chấm ảnh...). Không dùng window.confirm/alert/prompt, không localStorage.
+
+1. Tạo file mới services/safety.ts (logic thuần, không React):
+- isPolicyBlockError(msg): true nếu chữ thường chứa một trong: 'vi phạm', 'chính sách', 'không an toàn', 'safety', 'policy', 'blocked', 'sensitive', 'prohibited', 'responsible ai'.
+- sanitizeNegative(neg?: string): tách theo dấu phẩy/chấm phẩy/xuống dòng, BỎ các mục khớp regex /nud|naked|sex|suggestive|explicit|gore|blood|violen|corpse|dead|kill|weapon|celebrit|public figure|real person|minor|child/i, ghép lại bằng ", "; trả về undefined nếu rỗng.
+- buildImagePrompt(prompt, negative, level): level 0 = prompt + (sanitizeNegative có giá trị ? "\n\nAvoid: " + sanitized : ""); level >= 1 = chỉ prompt (không Avoid).
+- rewritePromptForPolicy(prompt: string, round: 1|2): Promise<string> gọi Flow.generate.text với thinkingLevel 'low', timeout 60 giây (Promise.race). systemInstruction: "You rewrite image-generation prompts that were blocked by a content-safety filter so they pass while keeping the same scene. Keep: characters' appearance, setting, composition, camera, lighting, color palette, art style and mood. Replace or soften anything graphic or sensitive: blood, gore, wounds, corpses and death become implied (shadows, aftermath hints, fallen objects, frightened reactions); sexual or suggestive cues, nudity, love-hotel/bedroom intimacy become neutral and fully clothed; real people or celebrities become fictional characters; weapons aimed at people become non-threatening. Never add words like nudity, gore, blood, sex, kill in any form, not even as negatives. Output English only, one paragraph, no quotes, no markdown, no explanation." Với round 2 thêm câu: "The previous rewrite was still blocked: be clearly more conservative, keep only the safe visual essentials." Bỏ ngoặc kép/```, trả về chuỗi; rỗng thì ném Error.
+
+2. Scene trong types.ts: thêm originalPrompt?: string và safetyNote?: string (lưu cùng phiên khi Lưu/Mở phiên).
+
+3. App.tsx, executeSceneGeneration:
+- Thay đoạn tạo effectivePrompt bằng biến cục bộ promptForTry = buildImagePrompt(scene.prompt, scene.negativePrompt, policyLevel) với policyLevel bắt đầu 0.
+- Trong catch, TRƯỚC nhánh isSafetyError cũ: nếu isPolicyBlockError(rawMsg) thì thang xử lý (không tính vào maxRetries của lỗi tạm thời, không gọi handleRecordImage(false) cho các lần bị chặn này):
+  a) policyLevel 0 -> 1: thử lại ngay, bỏ phần Avoid. retryInfo "Bị chặn vì chính sách → thử lại không kèm negative".
+  b) policyLevel 1 -> 2: safePrompt = await rewritePromptForPolicy(scene.prompt, 1); thử lại với safePrompt. retryInfo "Bị chặn → AI đang chỉnh prompt cho đúng quy định (1/2)".
+  c) policyLevel 2 -> 3: safePrompt = await rewritePromptForPolicy(safePrompt, 2); thử lại. retryInfo "... (2/2)".
+  d) vẫn bị chặn: status 'error', errorMessage "Bị chặn vì chính sách sau 2 lần AI chỉnh prompt. Sửa prompt tay rồi bấm tạo lại." Nếu rewritePromptForPolicy lỗi thì cũng báo lỗi kèm err.message thật.
+- Khi thành công bằng safePrompt: updateScene thêm originalPrompt (= prompt gốc nếu chưa có), prompt = safePrompt, safetyNote "AI đã chỉnh prompt cho an toàn (lần N)". Thành công ở mức 1 (bỏ Avoid): safetyNote "Đã bỏ negative để qua bộ lọc".
+- Lần "Retry failed"/tạo lại sau đó dùng scene mới nhất từ state (dùng ref scenes hiện tại theo id thay cho bản chụp cũ trong targetScenes), để không gửi lại prompt cũ.
+- Vẫn dừng lô như cũ khi lỗi quota.
+
+4. Giao diện: thẻ ảnh trong Gallery và dòng Live Execution Log hiện nhãn nhỏ màu hổ phách "AI đã chỉnh prompt" khi có safetyNote; di chuột (title) xem prompt gốc. Ô Prompt của scene hiện prompt đã chỉnh, kèm nút nhỏ "Khôi phục prompt gốc" khi có originalPrompt.
+
+KIỂM TRA: build không lỗi; services/safety.ts tồn tại; prompt có dòng "Negative: no nudity or suggestive exposure, no graphic gore or blood splatter" khi chạy thì Avoid không còn các mục đó; một lỗi "Lượt tạo này có thể vi phạm các chính sách" không còn hiện ngay là lỗi cuối mà đi qua thang a→b→c.

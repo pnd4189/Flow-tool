@@ -20,6 +20,7 @@ interface AppHeaderProps {
   onOpenSession: () => void;
   isSavingSession: boolean;
   hasUnsavedChanges?: boolean;
+  rendersInFlight?: number;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
@@ -38,6 +39,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onOpenSession,
   isSavingSession,
   hasUnsavedChanges = false,
+  rendersInFlight = 0,
 }) => {
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(projectName);
@@ -189,6 +191,14 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           <span className="material-symbols-outlined text-[13px] text-[#f5b301]">palette</span>
           <span className="text-[#ececef] truncate max-w-[120px]">{activeLook.label}</span>
         </div>
+
+        {/* Nhãn Đang render hiển thị ở mọi bước khi rendersInFlight > 0 */}
+        {rendersInFlight > 0 && (
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-mono animate-pulse">
+            <span className="material-symbols-outlined text-[12px] animate-spin">progress_activity</span>
+            <span>Đang render…</span>
+          </div>
+        )}
       </div>
 
       {/* Right Controls: Credit pill, Overview stats, Session & Settings */}

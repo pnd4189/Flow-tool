@@ -34,7 +34,7 @@ interface Step2Props {
   onAddToast: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void;
 }
 
-// React.memo cho từng dòng hàng đợi Bước 2 (Yêu cầu 1)
+// React.memo cho từng dòng hàng đợi Bước 2
 const QueueItemRowMemo = React.memo<{
   item: QueueItem;
   isSelected: boolean;
@@ -58,13 +58,20 @@ const QueueItemRowMemo = React.memo<{
     >
       <div className="w-16 h-16 bg-black rounded-md overflow-hidden flex-shrink-0 flex items-center justify-center relative border border-[#2b2b35]">
         {hasImage && currentVar ? (
-          <img
-            src={currentVar.thumbnailUrl || currentVar.blobUrl}
-            alt="Thumb"
-            loading="lazy"
-            decoding="async"
-            className="w-full h-full object-cover"
-          />
+          <>
+            <img
+              src={currentVar.thumbnailUrl || currentVar.blobUrl}
+              alt="Thumb"
+              loading="lazy"
+              decoding="async"
+              className="w-full h-full object-cover"
+            />
+            {item.safetyRewritten && (
+              <span className="absolute bottom-0 inset-x-0 bg-amber-500/90 text-black text-[7px] font-bold text-center py-0.2 leading-tight">
+                AI đã chỉnh prompt
+              </span>
+            )}
+          </>
         ) : isWaitingRetry ? (
           <div className="flex flex-col items-center gap-0.5 p-1 text-center">
             <span className="material-symbols-outlined text-amber-400 text-[16px] animate-pulse">
@@ -83,6 +90,15 @@ const QueueItemRowMemo = React.memo<{
           <div className="flex flex-col items-center gap-1">
             <span className="w-4 h-4 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
             <span className="text-[9px] font-mono text-sky-400">Đang soi...</span>
+          </div>
+        ) : item.status === 'modified_safety' ? (
+          <div className="flex flex-col items-center gap-0.5 p-1 text-center">
+            <span className="material-symbols-outlined text-amber-400 text-[16px] animate-spin">
+              auto_fix_high
+            </span>
+            <span className="text-[8px] font-mono text-amber-300 leading-tight">
+              Chỉnh an toàn
+            </span>
           </div>
         ) : item.status === 'error' ? (
           <span className="material-symbols-outlined text-rose-400 text-[18px]">
@@ -136,9 +152,16 @@ const QueueItemRowMemo = React.memo<{
             ) : item.status === 'qc' ? (
               <span className="text-sky-400">AI đang soi ảnh</span>
             ) : item.status === 'done' ? (
-              <span className="text-emerald-400">Xong ✓</span>
+              <span className="text-emerald-400 flex items-center gap-1">
+                Xong ✓
+                {item.safetyRewritten && (
+                  <span className="text-amber-300 text-[9px]">(AI đã chỉnh)</span>
+                )}
+              </span>
             ) : item.status === 'modified_safety' ? (
-              <span className="text-amber-400">Đã chỉnh an toàn</span>
+              <span className="text-amber-300 animate-pulse font-semibold">
+                Bị chặn → AI đang chỉnh prompt
+              </span>
             ) : item.status === 'error' ? (
               <span className="text-rose-400">Lỗi sinh ảnh</span>
             ) : null}
@@ -277,6 +300,7 @@ export const Step2ImageGen: React.FC<Step2Props> = ({
     let success = false;
     let safetyRewritten = false;
     let originalPromptBeforeSafety: string | undefined = undefined;
+    let safetyRounds = 0;
 
     while (attempt <= maxRetries && !success) {
       if (isStoppedRef.current) {
@@ -338,7 +362,6 @@ export const Step2ImageGen: React.FC<Step2Props> = ({
           inspectAndHandleQc(itemId, newVariant, genResult.base64, genResult.mimeType || 'image/jpeg', finalPrompt);
         }
       } catch (err: any) {
-        attempt++;
         const errMsg = err?.message || String(err);
         const newRecord: AttemptRecord = { at: Date.now(), message: errMsg };
 
@@ -364,26 +387,54 @@ export const Step2ImageGen: React.FC<Step2Props> = ({
           return;
         }
 
-        if (isSafetyPolicyError(errMsg) && !safetyRewritten) {
-          try {
-            onAddToast(`Phát hiện cảnh báo an toàn cho #${promptItem.order}. Đang gọi AI viết lại an toàn...`, 'warning');
-            originalPromptBeforeSafety = finalPrompt;
-            finalPrompt = await rewritePromptForSafety(finalPrompt);
-            safetyRewritten = true;
+        // Xử lý chặn an toàn (Safety Policy): thử tối đa 2 lần viết lại, không tính vào attempt lỗi tạm thời
+        if (isSafetyPolicyError(errMsg)) {
+          if (safetyRounds < 2) {
+            safetyRounds++;
+            const roundLabel = `${safetyRounds}/2`;
+            onAddToast(`Bị chặn → AI đang chỉnh prompt (${roundLabel}) cho #${promptItem.order}...`, 'warning');
+
+            if (!originalPromptBeforeSafety) {
+              originalPromptBeforeSafety = finalPrompt;
+            }
+
             updateQueueItem(itemId, (prev) => ({
               ...prev,
               status: 'modified_safety',
-              sentPrompt: finalPrompt,
-              translatedPrompt,
-              safetyRewritten: true,
-              originalPromptBeforeSafety,
               attempts: [...(prev.attempts || []), newRecord],
             }));
-            continue;
-          } catch {
-            // bỏ qua
+
+            try {
+              finalPrompt = await rewritePromptForSafety(finalPrompt, safetyRounds as 1 | 2);
+              safetyRewritten = true;
+              updateQueueItem(itemId, (prev) => ({
+                ...prev,
+                status: 'generating',
+                sentPrompt: finalPrompt,
+                translatedPrompt,
+                safetyRewritten: true,
+                originalPromptBeforeSafety,
+              }));
+              continue;
+            } catch (rewriteErr) {
+              console.warn('AI viết lại prompt lỗi:', rewriteErr);
+            }
           }
+
+          // Đã thử 2 lần viết lại vẫn bị chặn: dừng với lỗi cuối
+          const finalSafetyError = 'Bị chặn vì chính sách sau 2 lần AI chỉnh prompt. Sửa prompt tay rồi tạo lại.';
+          updateQueueItem(itemId, (prev) => ({
+            ...prev,
+            status: 'error',
+            error: finalSafetyError,
+            attempts: [...(prev.attempts || []), { at: Date.now(), message: finalSafetyError }],
+          }));
+          onAddToast(`#${promptItem.order}: ${finalSafetyError}`, 'error');
+          return;
         }
+
+        // Lỗi tạm thời (dịch vụ, mạng, busy, quota per minute)
+        attempt++;
 
         if (isTemporaryError(errMsg) && attempt <= maxRetries) {
           const delays = [5000, 15000, 40000];
@@ -544,7 +595,7 @@ export const Step2ImageGen: React.FC<Step2Props> = ({
       if (isPausedRef.current) break;
 
       const activeItems = queueRef.current.filter(
-        (item) => item.status === 'generating' || item.status === 'qc'
+        (item) => item.status === 'generating' || item.status === 'qc' || item.status === 'modified_safety'
       );
 
       if (isStoppedRef.current) {
@@ -569,7 +620,7 @@ export const Step2ImageGen: React.FC<Step2Props> = ({
         break;
       }
 
-      const activeGeneratingCount = queueRef.current.filter((item) => item.status === 'generating').length;
+      const activeGeneratingCount = queueRef.current.filter((item) => item.status === 'generating' || item.status === 'modified_safety').length;
       const availableSlots = Math.max(0, settingsRef.current.concurrency - activeGeneratingCount);
 
       if (availableSlots <= 0) {
@@ -796,7 +847,7 @@ export const Step2ImageGen: React.FC<Step2Props> = ({
 
       {/* 2. VÙNG CHÍNH 2 KHUNG CUỘN ĐỘC LẬP - BƯỚC 2 VIRTUALLIST */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-        {/* KHUNG TRÁI: VIRTUALLIST THUMBNAIL (Yêu cầu 1) */}
+        {/* KHUNG TRÁI: VIRTUALLIST THUMBNAIL */}
         <div className="w-full md:w-[380px] md:min-w-[380px] border-r border-[#26262b] flex flex-col h-full bg-[#111114]">
           <div className="p-2.5 border-b border-[#26262b] bg-[#141417] text-xs font-semibold text-zinc-300 flex items-center justify-between">
             <span>Danh sách hàng đợi ({queue.length})</span>
@@ -833,11 +884,15 @@ export const Step2ImageGen: React.FC<Step2Props> = ({
                     <h3 className="text-sm font-semibold text-zinc-100">
                       {selectedItem.promptItem.title}
                     </h3>
-                    <div className="text-[11px] font-mono text-zinc-400">
-                      Tỷ lệ: {selectedItem.promptItem.aspectRatio} • Model dùng:{' '}
-                      <span className="text-[#f5b301]">
-                        {activeVariant?.modelUsed || selectedItem.activeModel}
-                      </span>
+                    <div className="text-[11px] font-mono text-zinc-400 flex items-center gap-2">
+                      <span>Tỷ lệ: {selectedItem.promptItem.aspectRatio}</span>
+                      <span>•</span>
+                      <span>Model dùng: <strong className="text-[#f5b301]">{activeVariant?.modelUsed || selectedItem.activeModel}</strong></span>
+                      {selectedItem.safetyRewritten && (
+                        <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold text-[10px]">
+                          AI đã chỉnh prompt
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -856,11 +911,19 @@ export const Step2ImageGen: React.FC<Step2Props> = ({
 
               <div className="relative aspect-video max-w-2xl mx-auto bg-black rounded-lg overflow-hidden border border-[#26262b] shadow-xl flex items-center justify-center">
                 {activeVariant ? (
-                  <img
-                    src={activeVariant.blobUrl}
-                    alt="Ảnh sinh được"
-                    className="w-full h-full object-contain"
-                  />
+                  <div className="relative w-full h-full">
+                    <img
+                      src={activeVariant.blobUrl}
+                      alt="Ảnh sinh được"
+                      className="w-full h-full object-contain"
+                    />
+                    {selectedItem.safetyRewritten && (
+                      <span className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/75 backdrop-blur-xs text-[10px] font-mono text-amber-300 border border-amber-400/40 font-semibold flex items-center gap-1 shadow-md">
+                        <span className="material-symbols-outlined text-[13px] text-amber-400">auto_fix_high</span>
+                        AI đã chỉnh prompt
+                      </span>
+                    )}
+                  </div>
                 ) : selectedItem.retryWaitUntil && selectedItem.retryWaitUntil > Date.now() ? (
                   <div className="flex flex-col items-center gap-2 text-amber-300 text-xs p-4 text-center">
                     <span className="material-symbols-outlined text-[32px] text-amber-400 animate-pulse">
@@ -873,6 +936,18 @@ export const Step2ImageGen: React.FC<Step2Props> = ({
                       Lần thử {selectedItem.retryCount}/3 sau khi gặp lỗi mạng/dịch vụ tạm thời.
                     </p>
                   </div>
+                ) : selectedItem.status === 'modified_safety' ? (
+                  <div className="flex flex-col items-center gap-2 text-amber-300 text-xs p-4 text-center animate-pulse">
+                    <span className="material-symbols-outlined text-[32px] text-amber-400 animate-spin">
+                      auto_fix_high
+                    </span>
+                    <div className="font-semibold text-sm">
+                      Bị chặn → AI đang chỉnh prompt an toàn...
+                    </div>
+                    <p className="text-[11px] text-zinc-400 max-w-sm">
+                      Giữ nguyên bối cảnh, nhân vật và phong cách trong khi làm dịu các yếu tố nhạy cảm.
+                    </p>
+                  </div>
                 ) : selectedItem.status === 'generating' ? (
                   <div className="flex flex-col items-center gap-2 text-zinc-400 text-xs">
                     <span className="w-8 h-8 border-3 border-[#f5b301] border-t-transparent rounded-full animate-spin" />
@@ -881,7 +956,7 @@ export const Step2ImageGen: React.FC<Step2Props> = ({
                 ) : selectedItem.status === 'error' ? (
                   <div className="p-6 text-center text-rose-400 text-xs max-w-md">
                     <span className="material-symbols-outlined text-[28px] mb-2">warning</span>
-                    <p className="font-mono text-[11px] bg-black/60 p-3 rounded text-rose-300">
+                    <p className="font-mono text-[11px] bg-black/60 p-3 rounded text-rose-300 leading-relaxed">
                       {selectedItem.error}
                     </p>
                   </div>
@@ -1020,6 +1095,18 @@ export const Step2ImageGen: React.FC<Step2Props> = ({
                     {selectedItem.promptItem.prompt}
                   </p>
                 </div>
+
+                {selectedItem.sentPrompt && selectedItem.sentPrompt !== selectedItem.promptItem.prompt && (
+                  <div className="space-y-1">
+                    <div className="text-xs font-semibold text-amber-300 flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[15px]">send</span>
+                      Prompt thực tế đã gửi (Model AI):
+                    </div>
+                    <p className="text-xs font-mono text-amber-200/90 bg-amber-950/20 p-2.5 rounded border border-amber-800/30 whitespace-pre-wrap leading-relaxed">
+                      {selectedItem.sentPrompt}
+                    </p>
+                  </div>
+                )}
 
                 {(selectedItem.translatedPrompt || activeVariant?.translatedPrompt) && (
                   <div className="space-y-1">

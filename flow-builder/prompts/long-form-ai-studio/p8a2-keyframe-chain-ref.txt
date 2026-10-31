@@ -1,0 +1,9 @@
+SỬA 1 LỖI trong components/StoryboardGrid.tsx, KHÔNG đổi gì khác.
+
+Sau mỗi keyframe, onUpdateShots(prev => applyKeyframeToShots(...)) chỉ cập nhật state React ở lần render sau, nên vòng lặp lô tính slot kế tiếp bằng buildKeyframeSlots(shotsRef.current, ...) khi shotsRef.current CHƯA có keyframe vừa tạo. Hậu quả: slot sau trong cùng scene không nhận keyframe vừa tạo làm ảnh tham chiếu nối cảnh.
+
+Sửa:
+- Trong hàm chạy lô: khai báo `const generatedInRun: Array<{ slot: KeyframeSlot; kf: KeyframeInfo }> = [];` (dùng đúng kiểu slot hiện có). Mỗi keyframe thành công thì push vào mảng này, VẪN gọi onUpdateShots dạng hàm như hiện tại.
+- Mọi chỗ trong vòng lặp đang gọi buildKeyframeSlots(shotsRef.current, ...) thay bằng buildKeyframeSlots(withRun(shotsRef.current), ...) với `const withRun = (base: Shot[]) => generatedInRun.reduce((acc, g) => applyKeyframeToShots(acc, g.slot, g.kf), base);` (áp lại keyframe của lượt chạy lên state mới nhất; áp lại cùng keyframe là vô hại).
+- Sau vòng lặp, setSlots(buildKeyframeSlots(withRun(shotsRef.current), ...)) để bảng hiển thị đúng tham chiếu.
+- handleRegenerateSingle: nextSlots tính từ applyKeyframeToShots(shotsRef.current, slot, kf) thay vì shotsRef.current.

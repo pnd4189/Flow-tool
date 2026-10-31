@@ -1,0 +1,7 @@
+SỬA LỖI: "Tự động làm đẹp ảnh", "Làm nét nhẹ", "Giảm nhiễu" (QuickFixPanel) và op màu của bộ định tuyến tạo bản xem trước type 'color_quality' ở độ phân giải gốc. Nhưng khi bấm "Áp dụng vào ảnh" (App.tsx, nhánh `if (currentPreview.type === 'color_quality') { await handleApplyColorAdjustments(); return; }`) và khi "Tải xem trước" (RightSidebar.tsx handleDownloadPreview), tool lại tính lại từ thanh trượt colorParams đang bằng 0. Kết quả đo thật: ảnh tải về và ảnh áp dụng giống hệt ảnh gốc (0 pixel đổi).
+
+Chỉ sửa 2 chỗ đó, KHÔNG đổi gì khác:
+1. App.tsx: chỉ gọi handleApplyColorAdjustments() khi `currentPreview.type === 'color_quality' && currentPreview.previewDimensions` (bản xem trước thu nhỏ của thanh trượt màu). Ngược lại (không có previewDimensions) đi tiếp đường áp dụng chung bằng currentPreview.canvas như các loại xem trước khác.
+2. RightSidebar.tsx handleDownloadPreview: chỉ tính lại processColorAndQuality khi `candidatePreview.type === 'color_quality' && candidatePreview.previewDimensions`; còn lại tải thẳng candidatePreview.canvas.
+
+KIỂM TRA: bấm "Tự động làm đẹp ảnh" rồi "Tải xem trước" ra ảnh khác ảnh gốc ở vùng ngoài mặt; "Áp dụng vào ảnh" làm ảnh hiện tại đổi theo; kéo thanh trượt màu rồi áp dụng vẫn chạy như cũ.

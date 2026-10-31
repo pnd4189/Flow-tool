@@ -1,5 +1,5 @@
 import { Flow } from 'flow-sdk';
-import { Shot, Scene, Character, LookItem } from './types';
+import { Shot, Scene, Character } from './types';
 import {
   SHOT_SIZES,
   CAMERA_ANGLES,
@@ -8,6 +8,7 @@ import {
   LIGHTINGS,
   WEATHERS,
   EFFECTS,
+  LookItem,
 } from './library';
 import { enforceVariety } from './variety';
 
@@ -181,6 +182,15 @@ Shots to direct: ${JSON.stringify(shotSummary)}`;
     for (const item of parsedArray) {
       if (typeof item.order !== 'number') continue;
 
+      // 6. Nếu AI trả id hiệu ứng không hợp lệ thì lọc lấy các id hợp lệ; nếu mảng rỗng do lọc thì đặt undefined (để GIỮ hiệu ứng cũ của shot)
+      let validEffects: string[] | undefined = undefined;
+      if (Array.isArray(item.effects)) {
+        const filtered = item.effects.filter((e: string) => VALID_EFFECTS.has(e)).slice(0, 3);
+        if (filtered.length > 0) {
+          validEffects = filtered;
+        }
+      }
+
       const sanitized: DirectorSuggestion = {
         order: item.order,
         shotSize: VALID_SHOT_SIZES.has(item.shotSize) ? item.shotSize : undefined,
@@ -189,9 +199,7 @@ Shots to direct: ${JSON.stringify(shotSummary)}`;
         lens: VALID_PERSPECTIVES.has(item.lens) ? item.lens : undefined,
         lighting: VALID_LIGHTINGS.has(item.lighting) ? item.lighting : undefined,
         weather: VALID_WEATHERS.has(item.weather) ? item.weather : undefined,
-        effects: Array.isArray(item.effects)
-          ? item.effects.filter((e: string) => VALID_EFFECTS.has(e)).slice(0, 3)
-          : undefined,
+        effects: validEffects,
         startPose: typeof item.startPose === 'string' ? item.startPose.trim() : undefined,
         endPose: typeof item.endPose === 'string' ? item.endPose.trim() : undefined,
         ambient: typeof item.ambient === 'string' ? item.ambient.trim() : undefined,
@@ -238,7 +246,7 @@ export function buildComparisonRows(
     if (sug.weather && sug.weather !== shot.weather) {
       changes.push({ field: 'weather', label: 'Thời tiết', oldVal: shot.weather || 'clear', newVal: sug.weather });
     }
-    if (sug.effects) {
+    if (sug.effects && sug.effects.length > 0) {
       const oldEff = (shot.effects || []).join(', ') || 'none';
       const newEff = sug.effects.join(', ') || 'none';
       if (oldEff !== newEff) {

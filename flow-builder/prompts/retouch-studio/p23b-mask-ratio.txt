@@ -1,0 +1,7 @@
+SỬA NHỎ trong components/QuickFixPanel.tsx, hàm ensurePersonSelection. CHỈ sửa file này, KHÔNG đổi gì khác.
+
+Lỗi: candidate.pixelCount được đếm trên mặt nạ ở độ phân giải suy luận (cạnh dài ~768px), nhưng đang đem so với image.width*image.height (ảnh gốc, ví dụ 1920x2560) → ngưỡng 85% không bao giờ chặn được, và log "mặt nạ X% ảnh" sai (nhỏ hơn thực tế ~9 lần).
+
+Sửa: ở cả nhánh nhiều điểm và nhánh 1 điểm, với mỗi ứng viên đọc getImageData của candidate.canvas (đã ở độ phân giải gốc) và đếm số pixel > 127 → nativeCount. Dùng nativeCount (không dùng pixelCount) cho: lọc < 85% ảnh, so "lớn hơn" khi hoà, chọn ứng viên lớn nhất ở nhánh 1 điểm, và tỉ lệ % trong log. Ở nhánh nhiều điểm đếm luôn trong vòng đọc pixel đang có (lọc 85% sau khi đếm). Nhánh 1 điểm: log chỉ ghi `Tự khoanh người: 1 điểm, mặt nạ ${tỉ lệ}% ảnh` (bỏ "chứa 1/1 điểm" vì không đo).
+
+KIỂM TRA: build không lỗi; "Làm mờ phông" khi chưa chọn vùng vẫn chạy, log ghi tỉ lệ mặt nạ đúng (người đứng toàn thân khoảng 20–40% ảnh).

@@ -1,0 +1,10 @@
+SlimSAM weights and WASM now load successfully in the actual Flow sandbox. Fix the proven input/cache bugs only. Runtime error: Missing the following inputs: pixel_values. Source inspected:
+imageEmbeddings = await model.get_image_embeddings(inputs.pixel_values); // WRONG
+processor(undefined,{input_points:...}); // WRONG
+model({...promptInputs,image_embeddings:imageEmbeddings}); // WRONG: nested object, missing positional embeddings
+
+Verified source https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/src/models.js defines get_image_embeddings({pixel_values}) returning {image_embeddings, image_positional_embeddings}. It needs an OBJECT, and both returned tensors must be spread into the decoder call.
+
+Keep RawImage in the image cache. First call: inputs=await processor(rawImage); embeddings=await model.get_image_embeddings({pixel_values:inputs.pixel_values}); cache both embeddings tensors plus rawImage and sizes. Each point: promptInputs=await processor(cachedRawImage,{input_points:[[[pixelX,pixelY]]]}); omit input_labels because positive ones are the model default. decoderOutputs=await model({...promptInputs,...cachedEmbeddingsObject}); then existing post_process_masks with correct original/reshaped sizes. Do not call processor(undefined,...) or nest the embeddings object in a tensor field.
+
+The default cache key currently consists only of dimensions, so a different same-size upload can reuse the wrong person's embeddings. Key by actual sourceCanvas identity plus optional document revision, not just dimensions; invalidate and dispose old tensors/URLs on a different source/revision. Keep serialization. Preserve correct bundle/WASM/model versions, grayscale mask output, no fabricated pixels, diagnostics and compositor. Throttle repeated download progress messages (e.g. 5% increments) and cap diagnostic log length, preserving errors. End marker RETOUCH_CPU_INPUTS.

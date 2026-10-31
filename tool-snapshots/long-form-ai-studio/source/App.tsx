@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { ProjectConfig, Character, Scene, Shot } from './services/types';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { ProjectConfig, Character, Scene, Shot, ShotsUpdate, ShotPatch } from './services/types';
 import { LOOKS, getLook } from './services/library';
 import { exportStudioSession, importStudioSession } from './services/sessionService';
 import { buildKeyframeSlots } from './services/keyframeService';
@@ -62,6 +62,14 @@ export default function App() {
   // Workflow Step: cast | script | direct | storyboard | render | export
   const [currentStep, setCurrentStep] = useState<StudioStep>('cast');
 
+  // Trạng thái chạy nền: sinh keyframe và số job render video đang chạy
+  const [isGeneratingKeyframes, setIsGeneratingKeyframes] = useState<boolean>(false);
+  const [rendersInFlight, setRendersInFlight] = useState<number>(0);
+
+  const handleRenderingChange = useCallback((delta: number) => {
+    setRendersInFlight((prev) => Math.max(0, prev + delta));
+  }, []);
+
   // Credit budget & calibration
   const [creditBudget, setCreditBudget] = useState<number>(6000);
   const [creditsUsed, setCreditsUsed] = useState<number>(0);
@@ -83,7 +91,7 @@ export default function App() {
   const [directorComparisonRows, setDirectorComparisonRows] = useState<DirectorComparisonRow[]>([]);
   const [pendingSuggestions, setPendingSuggestions] = useState<DirectorSuggestion[]>([]);
 
-  // Toast notifications (auto-dismiss 4s)
+  // Toast notifications (auto-dismiss 5s)
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const addToast = (
@@ -160,7 +168,6 @@ export default function App() {
         'Lưu ngay',
         () => handleSaveSession()
       );
-      // Đặt lại mốc nhắc
       lastSavedVideoCountRef.current = renderedVideosCount;
       lastSavedKfCountRef.current = keyframesMetric.completed;
       setHasUnsavedChanges(true);
@@ -226,8 +233,22 @@ export default function App() {
     }
   };
 
-  const handleUpdateShotsOnly = (updatedShots: Shot[]) => {
-    setShots(updatedShots);
+  // Nhận Shot[] | ((prev: Shot[]) => Shot[]) và gọi thẳng setShots
+  const handleUpdateShotsOnly = (update: ShotsUpdate) => {
+    setShots(update);
+    setHasUnsavedChanges(true);
+  };
+
+  const handlePatchShot = (shotId: string, patch: ShotPatch) => {
+    setShots((prev) =>
+      prev.map((s) => {
+        if (s.id !== shotId) return s;
+        if (typeof patch === 'function') {
+          return patch(s);
+        }
+        return { ...s, ...patch };
+      })
+    );
     setHasUnsavedChanges(true);
   };
 
@@ -236,14 +257,65 @@ export default function App() {
     setHasUnsavedChanges(true);
   };
 
+  // 4. Nối cảnh (chain): khi đổi cut → chain thì xoá startKeyframe riêng của shot B (để dùng chung endKeyframe của shot A), và nếu shot B đã có take thì đánh dấu take active stale = true
   const handleToggleTransitionIn = (shotId: string) => {
     setShots((prev) =>
-      prev.map((s) =>
-        s.id === shotId
-          ? { ...s, transitionIn: s.transitionIn === 'chain' ? 'cut' : 'chain' }
-          : s
-      )
+      prev.map((s) => {
+        if (s.id !== shotId) return s;
+        const willBeChain = s.transitionIn === 'cut';
+        if (willBeChain) {
+          // Đổi cut → chain: xoá startKeyframe riêng của shot B để dùng chung endKeyframe shot trước
+          const updatedTakes = (s.takes || []).map((t) =>
+            t.id === (s.activeTakeId || s.takes![s.takes!.length - 1].id)
+              ? { ...t, stale: true }
+              : t
+          );
+          return {
+            ...s,
+            transitionIn: 'chain',
+            startKeyframe: undefined,
+            takes: updatedTakes.length > 0 ? updatedTakes : undefined,
+          };
+        } else {
+          return {
+            ...s,
+            transitionIn: 'cut',
+          };
+        }
+      })
     );
+    setHasUnsavedChanges(true);
+  };
+
+  // 5. Đổi định dạng Long/Short (16:9 ↔ 9:16) khi đã có keyframe hoặc take
+  const handleConfigChange = (newConfig: ProjectConfig) => {
+    if (newConfig.aspectRatio !== config.aspectRatio) {
+      // Đếm số keyframe và take đang ở tỉ lệ cũ
+      let affectedCount = 0;
+      shots.forEach((sh) => {
+        if (sh.startKeyframe) affectedCount++;
+        if (sh.endKeyframe && sh.endKeyframe !== sh.startKeyframe) affectedCount++;
+        if (sh.takes && sh.takes.length > 0) affectedCount += sh.takes.length;
+        else if (sh.video) affectedCount++;
+      });
+
+      if (affectedCount > 0) {
+        addToast(
+          `${affectedCount} keyframe/take đang ở tỉ lệ cũ (${config.aspectRatio}) — cần tạo lại`,
+          'info'
+        );
+
+        // Đánh dấu stale toàn bộ các take hiện có vì sai tỉ lệ khung hình
+        setShots((prev) =>
+          prev.map((sh) => ({
+            ...sh,
+            takes: (sh.takes || []).map((t) => ({ ...t, stale: true })),
+          }))
+        );
+      }
+    }
+
+    setConfig(newConfig);
     setHasUnsavedChanges(true);
   };
 
@@ -409,7 +481,7 @@ export default function App() {
         onChange={handleFileChange}
       />
 
-      {/* 1. AppHeader (44px) - Chấm vàng khi hasUnsavedChanges */}
+      {/* 1. AppHeader (44px) - Chấm vàng khi hasUnsavedChanges, hiển thị "Đang render…" khi có job */}
       <AppHeader
         projectName={projectName}
         onProjectNameChange={(name) => {
@@ -417,10 +489,7 @@ export default function App() {
           setHasUnsavedChanges(true);
         }}
         config={config}
-        onConfigChange={(cfg) => {
-          setConfig(cfg);
-          setHasUnsavedChanges(true);
-        }}
+        onConfigChange={handleConfigChange}
         creditBudget={creditBudget}
         creditsUsed={creditsUsed}
         isCalibrated={isCalibrated}
@@ -432,6 +501,7 @@ export default function App() {
         onOpenSession={handleOpenSessionClick}
         isSavingSession={isSavingSession}
         hasUnsavedChanges={hasUnsavedChanges}
+        rendersInFlight={rendersInFlight}
       />
 
       {/* 2. StepNav (36px) */}
@@ -779,13 +849,14 @@ export default function App() {
               </div>
             </div>
 
-            {/* Right: Full ShotInspector */}
+            {/* Right: Full ShotInspector với onPatchShot */}
             {activeShot ? (
               <ShotInspector
                 shot={activeShot}
                 scene={activeScene}
                 characters={characters}
                 config={config}
+                allShots={shots}
                 hasPrevShot={activeShotIndex > 0}
                 hasNextShot={activeShotIndex < shots.length - 1}
                 onPrevShot={() => {
@@ -798,10 +869,11 @@ export default function App() {
                     setSelectedShotId(shots[activeShotIndex + 1].id);
                   }
                 }}
-                onUpdate={(updated) => {
-                  setShots((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
-                  setHasUnsavedChanges(true);
-                }}
+                onPatchShot={handlePatchShot}
+                creditRemaining={currentRemaining}
+                onDeductCredits={handleDeductCredits}
+                isGeneratingKeyframes={isGeneratingKeyframes}
+                onRenderingChange={handleRenderingChange}
               />
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-center text-[#9a9aa3] p-6 space-y-2">
@@ -823,67 +895,67 @@ export default function App() {
           </div>
         )}
 
-        {/* STEP 4: STORYBOARD (Grid) */}
-        {currentStep === 'storyboard' && (
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {shots.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-center text-[#9a9aa3] p-6 space-y-2">
-                <span className="material-symbols-outlined text-4xl text-[#f5b301]/60">grid_view</span>
-                <p className="text-sm font-semibold text-[#ececef]">Chưa có shot nào để tạo Storyboard</p>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  icon="arrow_forward"
-                  onClick={() => setCurrentStep('script')}
-                >
-                  Đến bước 2 Kịch bản
-                </Button>
-              </div>
-            ) : (
-              <StoryboardGrid
-                shots={shots}
-                scenes={scenes}
-                characters={characters}
-                config={config}
-                onUpdateShots={handleUpdateShotsOnly}
-                onUpdateScenes={handleUpdateScenesOnly}
-              />
-            )}
+        {/* STEP 4: STORYBOARD - LUÔN DỰNG KHI SHOTS > 0 ĐỂ TIẾN TRÌNH VÀ NÚT DỪNG KHÔNG BỊ HUỶ */}
+        {shots.length > 0 && (
+          <div className={`flex-1 flex flex-col overflow-hidden ${currentStep === 'storyboard' ? '' : 'hidden'}`}>
+            <StoryboardGrid
+              shots={shots}
+              scenes={scenes}
+              characters={characters}
+              config={config}
+              onUpdateShots={handleUpdateShotsOnly}
+              onUpdateScenes={handleUpdateScenesOnly}
+              onGeneratingChange={setIsGeneratingKeyframes}
+            />
+          </div>
+        )}
+        {currentStep === 'storyboard' && shots.length === 0 && (
+          <div className="flex-1 flex flex-col items-center justify-center text-center text-[#9a9aa3] p-6 space-y-2">
+            <span className="material-symbols-outlined text-4xl text-[#f5b301]/60">grid_view</span>
+            <p className="text-sm font-semibold text-[#ececef]">Chưa có shot nào để tạo Storyboard</p>
+            <Button
+              variant="primary"
+              size="sm"
+              icon="arrow_forward"
+              onClick={() => setCurrentStep('script')}
+            >
+              Đến bước 2 Kịch bản
+            </Button>
           </div>
         )}
 
-        {/* STEP 5: RENDER (RenderQueue) */}
-        {currentStep === 'render' && (
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {shots.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-center text-[#9a9aa3] p-6 space-y-2">
-                <span className="material-symbols-outlined text-4xl text-[#f5b301]/60">queue_play_next</span>
-                <p className="text-sm font-semibold text-[#ececef]">Chưa có shot nào để Render</p>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  icon="arrow_forward"
-                  onClick={() => setCurrentStep('script')}
-                >
-                  Đến bước 2 Kịch bản
-                </Button>
-              </div>
-            ) : (
-              <RenderQueue
-                shots={shots}
-                scenes={scenes}
-                characters={characters}
-                config={config}
-                creditRemaining={currentRemaining}
-                isGeneratingKeyframes={false}
-                onUpdateShots={handleUpdateShotsOnly}
-                onDeductCredits={handleDeductCredits}
-              />
-            )}
+        {/* STEP 5: RENDER - LUÔN DỰNG KHI SHOTS > 0 ĐỂ KHÔNG BỊ MẤT NÚT DỪNG VÀ TIẾN TRÌNH */}
+        {shots.length > 0 && (
+          <div className={`flex-1 flex flex-col overflow-hidden ${currentStep === 'render' ? '' : 'hidden'}`}>
+            <RenderQueue
+              shots={shots}
+              scenes={scenes}
+              characters={characters}
+              config={config}
+              creditRemaining={currentRemaining}
+              isGeneratingKeyframes={isGeneratingKeyframes}
+              onUpdateShots={handleUpdateShotsOnly}
+              onDeductCredits={handleDeductCredits}
+              onRenderingChange={handleRenderingChange}
+            />
+          </div>
+        )}
+        {currentStep === 'render' && shots.length === 0 && (
+          <div className="flex-1 flex flex-col items-center justify-center text-center text-[#9a9aa3] p-6 space-y-2">
+            <span className="material-symbols-outlined text-4xl text-[#f5b301]/60">queue_play_next</span>
+            <p className="text-sm font-semibold text-[#ececef]">Chưa có shot nào để Render</p>
+            <Button
+              variant="primary"
+              size="sm"
+              icon="arrow_forward"
+              onClick={() => setCurrentStep('script')}
+            >
+              Đến bước 2 Kịch bản
+            </Button>
           </div>
         )}
 
-        {/* STEP 6: EXPORT (ExportStep v2: 3 khối chuyên nghiệp) */}
+        {/* STEP 6: EXPORT */}
         {currentStep === 'export' && (
           <ExportStep
             projectTitle={projectName}
@@ -986,7 +1058,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 5. Unified Toast Notifications (Hỗ trợ nút hành động) */}
+      {/* 5. Unified Toast Notifications */}
       {toasts.length > 0 && (
         <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none">
           {toasts.map((t) => (

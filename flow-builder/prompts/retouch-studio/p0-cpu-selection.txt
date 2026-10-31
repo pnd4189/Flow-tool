@@ -1,0 +1,15 @@
+Confirmed root cause with real browser probes: BOTH document.createElement('canvas').getContext('webgl') and getContext('webgl2') return null. MediaPipe fails even in CPU mode because TensorsToSegmentationCalculator requires kGpuService. Stop retrying MediaPipe for selection. Preserve the UI/compositor and implement actual point-prompt segmentation entirely on WASM CPU.
+
+Use a lazy dynamic import of verified browser bundle https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.web.min.js (URL variable, import(/* @vite-ignore */ url)). Exports SamModel, AutoProcessor, RawImage, env. Set env.allowLocalModels=false; env.backends.onnx.wasm.numThreads=1; no WebGPU/WebGL, device:'wasm', dtype:'q8'. Use Xenova/slimsam-77-uniform, Apache-2.0, pinned revision 5850ab45f587c112167512ffef949107115e26a0. Model weights provide vision_encoder_quantized.onnx and prompt_encoder_mask_decoder_quantized.onnx. Show actual download progress, load lazily and cache model/processor. If needed configure wasmPaths to the matching onnxruntime-web dependency version from the package, not a random version. Do not block on unavailable cross-origin-isolation/threads.
+
+Verified official model usage https://huggingface.co/Xenova/slimsam-77-uniform/raw/main/README.md :
+const model=await SamModel.from_pretrained(id,options);
+const processor=await AutoProcessor.from_pretrained(id,options);
+const raw=await RawImage.read(imageBlobUrl);
+const inputs=await processor(raw,{input_points:[[[xPixels,yPixels]]]});
+const outputs=await model(inputs);
+const masks=await processor.post_process_masks(outputs.pred_masks,inputs.original_sizes,inputs.reshaped_input_sizes);
+// masks[0] dims [1,3,H,W], bool Uint8Array. iou_scores dims [1,1,3].
+Choose highest-IoU mask that contains the clicked point, map true to grayscale RGB=255 (else0), alpha255; scale to native source coordinates. Empty/invalid mask is an error, never fabricate a rectangle/pixel. Use a source image resized to max 768px for inference as needed, preserving aspect ratio; x/y are coordinates in that image, not normalized 0..1. Preserve original native pixels.
+
+Cache image embeddings by actual document revision when supported, invalidate after edit/upload, serialize calls and reject stale output. Keep segmentAtPoint/current exported signatures for callers. Update diagnostics to report the real CPU engine and model; remove irrelevant force GPU/MediaPipe probe buttons. Keep the REAL point-selection, compositor preservation, PNG alpha and cutout download probes. Report error details faithfully. Loading needs progress text; subsequent point clicks should reuse loaded weights. Do not add other editor features in this patch. End marker RETOUCH_CPU_SELECTION.

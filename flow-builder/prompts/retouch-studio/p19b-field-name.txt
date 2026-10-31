@@ -1,0 +1,1 @@
+Sửa đúng 1 dòng trong components/QuickFixPanel.tsx, KHÔNG đổi gì khác: dòng 210 `outsidePreservedCount: res.outsidePreservedCount,` nằm trong object diagnostics phải là `outsideMaskPreservedPixels: res.outsidePreservedCount,` (tên trường của kiểu diagnostics là outsideMaskPreservedPixels; lần sửa trước đã đổi nhầm).
