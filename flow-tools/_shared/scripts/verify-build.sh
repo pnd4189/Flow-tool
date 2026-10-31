@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Usage: FLOW_TOOL_ID=<uuid> verify-build.sh <tool-slug>
-# Run after every builder build. <tool-slug> is the folder name under tool-snapshots/.
+# Run after every builder build. <tool-slug> is the folder name under flow-tools/.
 # 1. Extracts the live code (extract-code.sh) into $FLOW_WORK/verify/<slug>/source.
-# 2. Lists files the build changed versus tool-snapshots/<slug>/source, with line counts
+# 2. Lists files the build changed versus flow-tools/<slug>/source, with line counts
 #    (a big drop means the builder rewrote a file and probably dropped features).
 # 3. Runs check-snapshot.sh on the extracted code with the repo's test-scripts and test-data.
 # It never touches the repo snapshot: after reviewing the diff, copy the extracted source over it.
@@ -10,9 +10,9 @@
 set -u
 SLUG="$1"
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO="$(cd "$KIT/../.." && pwd)"
+REPO="$(cd "$KIT/../../.." && pwd)"
 source "$KIT/common.sh"
-SNAP="$REPO/tool-snapshots/$SLUG"
+SNAP="$REPO/flow-tools/$SLUG"
 [ -d "$SNAP/source" ] || { echo "no snapshot at $SNAP/source"; exit 3; }
 OUT="$FLOW_WORK/verify/$SLUG"
 mkdir -p "$OUT"

@@ -6,11 +6,11 @@ Rút ra từ 3 tool đã làm (Image to Video Studio, Long-Form AI Studio, Effec
 
 1. Tool chỉ sửa qua chat "Trình tạo công cụ" (chế độ "Chỉnh sửa"). Mình không đụng vào code trực tiếp được.
 2. Builder là AI: viết code nhanh nhưng hay sai và hay làm mất tính năng. Mọi bản build đều phải **đọc code và chạy thử thật** trước khi tin.
-3. Bản sao code trong `tool-snapshots/` chỉ để đọc và sao lưu; sửa ở đó không làm gì cả.
+3. Bản sao code trong `flow-tools/` chỉ để đọc và sao lưu; sửa ở đó không làm gì cả.
 
 ## Vòng làm việc
 
-1. **Kiểm chứng nền tảng trước khi thiết kế (pha 0).** Nhờ builder dựng một bảng thử nhỏ chạy các phép thử thật (tên model ảnh nào chạy, mã hoá MP4 có chạy không, tách lớp, nhìn ảnh bằng AI…). Ở Effect-Image nhờ bước này mới biết Imagen không dùng được và MP4 mã hoá được ngay trong tool. Mẫu: `flow-builder/prompts/effect-image/p0.txt`.
+1. **Kiểm chứng nền tảng trước khi thiết kế (pha 0).** Nhờ builder dựng một bảng thử nhỏ chạy các phép thử thật (tên model ảnh nào chạy, mã hoá MP4 có chạy không, tách lớp, nhìn ảnh bằng AI…). Ở Effect-Image nhờ bước này mới biết Imagen không dùng được và MP4 mã hoá được ngay trong tool. Mẫu: `flow-tools/effect-image/prompts/p0.txt`.
 2. **Viết prompt nhỏ, một nhóm tính năng mỗi lần.** Mỗi prompt dưới ~5.000 ký tự cho dễ kiểm. Prompt 9.200 ký tự (p2) bị builder báo lỗi, nhưng một prompt 1.500 ký tự gửi ngay sau đó cũng lỗi rồi treo 23 phút, nên đó là trục trặc phía Flow chứ chưa chắc do kích thước; sau khi tải lại trang, các bản chia nhỏ p2a–p2d đều build trong 1,5–2,5 phút. Mỗi prompt nên có:
    - tên file nào được tạo/sửa, và câu "giữ nguyên phần còn lại, **chỉ sửa đúng chỗ nêu, không viết lại file**";
    - ràng buộc sandbox (không `confirm/alert/prompt`, không `<a download>`, không `localStorage`, không ZIP);
@@ -19,7 +19,7 @@ Rút ra từ 3 tool đã làm (Image to Video Studio, Long-Form AI Studio, Effec
 3. **Gửi và chờ** bằng `send-watch.sh` (báo khi builder treo). Bản build thường mất 1–3,5 phút.
 4. **Sau mỗi build:**
    - Tool còn chạy không? Nếu hiện "Không chạy được công cụ", đọc lỗi ở "View error details" (ví dụ `The character ">" is not valid inside a JSX element` hay `subjectCutoutDataUrl is not defined`). Nút đỏ "Sửa lỗi" tự gửi lỗi cho builder nhưng có lần sửa trượt (ReferenceError); khi đó tìm đúng dòng trong tab "Mã" và gửi prompt sửa đúng 1 dòng đó.
-   - Chạy `FLOW_TOOL_ID=<id> flow-builder/scripts/verify-build.sh <tool-slug>`: chụp code, liệt kê file đổi kèm số dòng, kiểm tra kiểu (tsc) và chạy `test-scripts/*.test.ts` của tool. Builder hay tự đổi tên trường, xoá chú thích, quên bước ghi canvas; tsc và bài kiểm tra bắt được, đọc tóm tắt của builder thì không. Đọc diff rồi mới chép code vào `tool-snapshots/<slug>/source`.
+   - Chạy `FLOW_TOOL_ID=<id> flow-tools/_shared/scripts/verify-build.sh <tool-slug>`: chụp code, liệt kê file đổi kèm số dòng, kiểm tra kiểu (tsc) và chạy `test-scripts/*.test.ts` của tool. Builder hay tự đổi tên trường, xoá chú thích, quên bước ghi canvas; tsc và bài kiểm tra bắt được, đọc tóm tắt của builder thì không. Đọc diff rồi mới chép code vào `flow-tools/<slug>/source`.
    - Chụp code bằng `extract-code.sh`, so **số dòng từng file** với lần trước và `grep` các tính năng chủ chốt. Builder đã nhiều lần viết lại cả file và âm thầm mất tính năng: bộ nhận dạng prompt mất bước bỏ cờ Midjourney; Step3Effects từ 1382 xuống 594 dòng, Step4Export từ 978 xuống 406 dòng khi thêm danh sách ảo hoá.
 5. **Chạy thử thật, ưu tiên cách 0 credit.** Ảnh và text miễn phí; video tốn credit nên thử bản rẻ nhất và báo user số credit đã tốn.
 6. **Đừng chỉ đếm file.** Mở file manifest/kết quả kiểm nội dung. Các lỗi nặng của Effect-Image chỉ lộ ra khi đọc nội dung: manifest tổng ghi cả prompt chưa chạy (chạy tiếp sẽ bỏ sót), prompt vẫn còn cờ `--v 6 --style raw`, tab dừng nhưng clip cuối không vào manifest.
@@ -53,7 +53,7 @@ Rút ra từ 3 tool đã làm (Image to Video Studio, Long-Form AI Studio, Effec
 - Kiểm tra ước tính thời gian bằng số đo thật (từng lệch gần 2 lần).
 - Nói rõ cho user phần nào đã chạy thật, phần nào chưa.
 
-## Bảng script (`flow-builder/scripts/`)
+## Bảng script (`flow-tools/_shared/scripts/`)
 
 | Script | Việc |
 |---|---|
@@ -65,14 +65,14 @@ Rút ra từ 3 tool đã làm (Image to Video Studio, Long-Form AI Studio, Effec
 | `verify-build.sh <tool-slug>` | Sau mỗi build: chụp code vào `$FLOW_WORK/verify/<slug>`, so với bản trong repo, rồi chạy `check-snapshot.sh`. Không sửa repo. Cần `FLOW_TOOL_ID`. |
 | `check-snapshot.sh <thư mục tool>` | Kiểm tra kiểu `source/` (stub cho react, flow-sdk, JSX) và chạy từng `test-scripts/*.test.ts` bằng node qua esbuild. Lỗi kiểu có sẵn từ trước ghi ở `test-scripts/tsc-known-errors.txt` được bỏ qua, chỉ lỗi mới làm trượt (2026-10-31 cả 4 tool đã về 0 lỗi, không còn file này). Lần đầu `npx` tải typescript 5.9.3 và esbuild 0.27.0. |
 
-Script riêng cho Effect-Image nằm ở `tool-snapshots/effect-image/test-scripts/`.
+Script riêng cho Effect-Image nằm ở `flow-tools/effect-image/test-scripts/`.
 
-Bài kiểm tra của từng tool (`tool-snapshots/<slug>/test-scripts/`):
+Bài kiểm tra của từng tool (`flow-tools/<slug>/test-scripts/`):
 - Effect-Image `prompt-parser.test.ts`: đếm prompt trên các file mẫu ở `test-data/`, gồm 10 cảnh KTT dạng `--- SCENE ---` và file KTT_T04 120 cảnh nếu ổ Drive có gắn.
 - Long-Form `script-import.test.ts`: tách shot và lời thoại khi nạp kịch bản.
 - Retouch `request-router.test.ts`: câu yêu cầu tiếng Việt chạy đúng thuật toán, mặt chỉ bị sửa khi câu nhắc tới mặt.
 - Long-Form `render-take.test.ts`: nhánh lỗi của render với Flow giả lập (bị chặn → AI viết lại 1 lần → thử lại; chặn lần 2 → báo lỗi; hết credit → `QUOTA_ERROR`). Không tốn credit.
 - Image to Video `safety.test.ts`: nhận lỗi chặn tiếng Việt, lọc negative KTT, thang thử lại, AI viết lại prompt.
-- Effect-Image `parallax-assets-browser-probe.js` (chạy trên Chrome, alias thêm `mp4-muxer=flow-builder/scripts/mp4-muxer-stub.js`): lớp parallax "sẵn sàng" phải tới được khung hình dựng ra.
+- Effect-Image `parallax-assets-browser-probe.js` (chạy trên Chrome, alias thêm `mp4-muxer=flow-tools/_shared/scripts/mp4-muxer-stub.js`): lớp parallax "sẵn sàng" phải tới được khung hình dựng ra.
 - Flow giả lập: `flow-sdk-stub.js` ném lỗi với mọi lời gọi Flow, trừ khi bài kiểm tra gán `globalThis.__flowStub = { generate: { … } }`.
-- Retouch `body-reshape-browser-probe.js`: cần canvas thật nên chạy trong một tab `about:blank` của Chrome, không chạy bằng node. Bundle bằng esbuild `--format=iife --global-name=RetouchReshapeProbe --alias:flow-sdk=flow-builder/scripts/flow-sdk-stub.js`, rồi `eval` gọi `RetouchReshapeProbe.runBodyReshapeChecks()`. Dùng phiên agent-browser `flow-builder`: mở phiên mới sẽ làm Chrome hiện hộp hỏi quyền. Sau `tab close` phải `tab t2` để gắn lại tab Flow.
+- Retouch `body-reshape-browser-probe.js`: cần canvas thật nên chạy trong một tab `about:blank` của Chrome, không chạy bằng node. Bundle bằng esbuild `--format=iife --global-name=RetouchReshapeProbe --alias:flow-sdk=flow-tools/_shared/scripts/flow-sdk-stub.js`, rồi `eval` gọi `RetouchReshapeProbe.runBodyReshapeChecks()`. Dùng phiên agent-browser `flow-builder`: mở phiên mới sẽ làm Chrome hiện hộp hỏi quyền. Sau `tab close` phải `tab t2` để gắn lại tab Flow.

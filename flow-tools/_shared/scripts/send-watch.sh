@@ -4,7 +4,7 @@
 # <tail text> = the LAST words of the prompt; the reply is whatever follows them in the chat.
 # Detects a hung builder: no reply text after 300 s.
 # Exit: 0 done, 1 chat box missing, 2 timeout, 3 guard failed, 4 builder server error, 5 builder hung.
-# Builder error (4) or hang (5): reload the tool page, wait ~15 s, run again (see docs/builder-workflow.md).
+# Builder error (4) or hang (5): reload the tool page, wait ~15 s, run again (see flow-tools/_shared/builder-workflow.md).
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 PF="$1"; TAIL="$2"
 guard || exit 3
