@@ -4,7 +4,7 @@ Chuyển giao việc xây Flow Tool từ project IdeaFlow sang project này. Đ�
 
 ## 1. Hiện có gì
 
-Cả 4 tool nằm trong dự án Flow "Youtube studio" (`6c4180b7-8276-4ff6-aa71-0d0abbdcd3a6`). Code của chúng chỉ tồn tại trong Flow; `flow-tools/` là bản sao để đọc và sao lưu. URL mở tool: `https://flow.google.com/project/<project id>/tool/<tool id>?mode=EDIT` (dùng `mode=APP` để chạy).
+Cả 5 tool nằm trong dự án Flow "Youtube studio" (`6c4180b7-8276-4ff6-aa71-0d0abbdcd3a6`). Code của chúng chỉ tồn tại trong Flow; `flow-tools/` là bản sao để đọc và sao lưu. URL mở tool: `https://flow.google.com/project/<project id>/tool/<tool id>?mode=EDIT` (dùng `mode=APP` để chạy).
 
 | Tool | Tool id | Dùng để | Bản sao code |
 |---|---|---|---|
@@ -12,6 +12,7 @@ Cả 4 tool nằm trong dự án Flow "Youtube studio" (`6c4180b7-8276-4ff6-aa71
 | Long-Form AI Studio | `008c934c-cfac-4f75-ad99-c492960ce1ce` | Làm phim hoạt hình 2D từ nhiều cảnh 8 giây nối nhau (kịch bản tải lên hoặc AI viết, take/khoá/kiểm tra, bộ xuất cho hậu kỳ). Mặc định Omni 1.1 Flash. Chi tiết: `flow-tools/long-form-ai-studio/README.md` | `flow-tools/long-form-ai-studio/source` |
 | Image to Video Studio | `88a10ec3-c82f-40ee-a0e3-4daa8d43bfe8` | Sinh ảnh hàng loạt + Video Studio (ảnh → video), bộ đếm sử dụng, trung tâm tải xuống, tự chọn ảnh, AI chấm ảnh. Chi tiết: `flow-tools/image-to-video-studio/README.md` | `flow-tools/image-to-video-studio/source` |
 | Retouch Studio | `11f70fa9-de9d-4918-8c64-e8f4d9e77644` | Tải ảnh gốc, bấm chọn vùng, xóa/sửa bằng AI, nền ảnh, màu/nét, cắt/xoay/mở rộng khung, bảo vệ mặt, lịch sử và phiên JSON. Chi tiết và phạm vi đã kiểm: `flow-tools/retouch-studio/README.md` | `flow-tools/retouch-studio/source` |
+| Character Sheet Studio | `7f6b7c90-d45c-47f1-be2d-4c440a467e09` | Tạo bảng thiết kế nhân vật (chân dung + góc toàn thân/góc mặt/biểu cảm) từ cấu hình hoặc ảnh khuôn mặt/trang phục; khoá khuôn mặt, tự kiểm tra chất lượng, biến thể, gói mô tả cho video. 0 credit. Chi tiết: `flow-tools/character-sheet-studio/README.md` | `flow-tools/character-sheet-studio/source` |
 
 Định hướng của user: chỉ làm **hoạt hình 2D, không người thật**; loạt video dự kiến là truyện có lời dẫn về các phát minh kỳ lạ trong lịch sử. Ngân sách 6000 credit/tháng.
 
@@ -86,6 +87,7 @@ Mở tab tool trước bằng `agent-browser --auto-connect --pin-tab open <URL>
      - Long-Form timeout 900 s chạy thật.
      - MP4 có parallax xuất thật trên Flow.
      - Mặt tròn hoạt hình không vẽ miệng còn hơi phình quai hàm (xem `flow-tools/retouch-studio/README.md`).
+8. 2026-11-02, tool mới **Character Sheet Studio** (xem `flow-tools/character-sheet-studio/README.md`): làm từ bài Facebook tham khảo, 30 prompt, 12 bài kiểm tra node, chạy thật 0 credit. Đã chạy thật cả 6 bố cục, khung 9:16 và 1:1, nút EN, và chạy thật chính tool mẫu (nạp vào dự án trống tạm đã xoá, điền mã kích hoạt đang hiện sẵn trên màn hình theo đồng ý của user) để so: 11 lần của nó, 18 lần của tool này, cùng model, 0 lỗi mỗi bên. **Ảnh ngang nhau; 1 ảnh tốc độ ngang nhau (~28 s); 3 ảnh một lần bấm: tool này ~28 s, tool mẫu ~84 s** (sau khi đổi sang hiện ảnh ngay, chấm chất lượng nền, tạo song song). So sánh lộ ra bố cục B kém (1/2 so với 4/4 của mẫu), mặc định ngầm, trang phục bị trộn với bộ mẫu, chân dung không có áo, kiểm tra chất lượng làm chậm ảnh đầu, bố cục E và F sai (E 1/3, F 0/6, nay 6/6 cả hai sau khi nêu rõ số lượng và điều cấm trong câu mô tả). Thêm tuỳ chọn "chọn bản tốt nhất trong K bản thử" (mặc định tắt): đo thật K=3 nâng điểm khớp mặt ~5 điểm nhưng chậm gấp ~3,5, nên chỉ dùng khi cần; đều đã sửa. Còn chưa kiểm hoặc chưa làm: vòng viết lại prompt khi bị chặn chính sách (Flow không chặn khi thử, mới kiểm bằng Flow giả lập), điểm QC ít phân hoá, tạo từng góc rồi ghép bằng canvas, tạo hàng loạt từ danh sách nhân vật.
 
 ## 6. Dọn dẹp
 

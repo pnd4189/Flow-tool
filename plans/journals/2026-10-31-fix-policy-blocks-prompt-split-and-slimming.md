@@ -38,3 +38,9 @@
 - Tightening the tsc stubs (typed `React.FC`, `React.memo`, JSX children, module stubs) cut the "known" errors from 20 to 0 real ones. Among them, `bgBase64`/`subjectCutoutBase64` "not on ParallaxLayerData" was the visible end of a real bug: export and preview read cutout fields that layerService never sets, so parallax never reached an MP4. Treat a recorded type error as a lead, not noise.
 - Face slim on 2D art: a peaked displacement profile pinches wherever the true contour meets the AI's F. A smooth plateau profile and a jaw-weighted vertical ramp fixed the S-shape. A convexity metric ("the width drop per 8 rows may only grow") is what made the probe discriminate; a monotonic-width check passed the broken version.
 - Several probe checks first passed vacuously (flat colours, a shape fully inside the warp band). Every new check was run against the old code first to see it fail.
+
+## 2026-11-02: Character Sheet Studio, a new tool built with tests first
+- Every builder prompt was preceded by a node test that failed on the old code, so each bad build was caught by a check and not by a screenshot: the builder read React state through a setState updater (face lock always failed), moved `images` to a third argument of `Flow.generate.text` (images never sent), and kept a second copy of the final no-text sentence.
+- A generic Flow error ("Dịch vụ tạo hình ảnh không hoạt động") was a prompt over ~4,100 characters, rejected in 9 ms. Only the diagnostics log (per-call duration, promptChars, refCount) made it visible; build that log before the features that depend on long prompts.
+- Free text typed in Vietnamese and phrased as "notes" was painted into the picture; translating to English visual descriptions and ending the prompt with the no-text rule fixed it.
+- The builder chat silently ignored the send button for an hour because another Flow tab was in front (`document.visibilityState === 'hidden'`). `send-watch.sh` now makes the tab visible first.
