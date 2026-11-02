@@ -1,0 +1,11 @@
+FIX A REAL BUG in hooks/useReferences.ts: "Khoá khuôn mặt" always fails with "Vui lòng thêm ít nhất 1 ảnh khuôn mặt trước khi khóa nhận diện" even when a face image is shown.
+
+Cause: lockFace and analyzeOutfit read the latest state with `setFaceRefs((prev) => { currentFaces = [...prev]; return prev; })`. React runs a state updater LATER, so `currentFaces` is still empty when it is checked right after. Never read state through an updater.
+
+Fix (only this file, keep every export and behaviour otherwise):
+1. Keep two mirrors: `const faceRefsRef = useRef<RefImage[]>([])` and `const outfitRefsRef = useRef<RefImage[]>([])`. Add helpers `commitFaceRefs(next: RefImage[])` and `commitOutfitRefs(next: RefImage[])` that assign the ref first, then call setFaceRefs/setOutfitRefs. Every place that changes the lists (addFiles, addFromLibrary, remove, lockFace, analyzeOutfit, applyPrepared, any clearing) must compute `next` from `faceRefsRef.current` / `outfitRefsRef.current` and call the commit helper, so the ref is always up to date synchronously.
+2. lockFace and analyzeOutfit (and addFiles/addFromLibrary for the limit checks) read `faceRefsRef.current` / `outfitRefsRef.current`, never state captured in a closure and never through a setState updater. Their useCallback dependency lists become [].
+3. Same idea for faceLocked and faceDna if any async code reads them: mirror them in refs.
+4. Do not change any other file.
+
+Return the changed file list. CHECK: types compile; add one face image, press "Khoá khuôn mặt": no error appears and after a while the green "Đã khoá khuôn mặt" badge shows with an editable Face DNA.

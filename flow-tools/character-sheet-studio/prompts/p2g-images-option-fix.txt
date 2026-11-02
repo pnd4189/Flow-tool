@@ -1,0 +1,3 @@
+FIX A REGRESSION in services/faceDna.ts only. In describeFace and describeOutfit the images array was moved OUT of the options object into a THIRD argument of Flow.generate.text, so the images are no longer sent. Flow.generate.text takes exactly two arguments: (prompt, options) and the images belong INSIDE options: { systemInstruction, thinkingLevel: 'low', images }. Restore that in both functions. Change nothing else, do not touch formatFaceDna or any other file.
+
+Return the changed file list. CHECK: types compile; locking a face still returns a Face DNA description.

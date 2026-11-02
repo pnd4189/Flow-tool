@@ -1,0 +1,9 @@
+FIX THE OUTFIT MIXING. In real runs a typed outfit (burgundy cardigan, light-blue shirt, patterned tie, brown-grey trousers) came out with the streetwear preset garments drawn on top of it (black hooded jacket, backpack straps, cargo pockets) because the untouched default preset is streetwear and its garment list stays in the prompt. Edit only constants.ts (INITIAL_CONFIG) and services/promptBuilder.ts (getOutfitDescription); keep every export and stay inside MAX_PROMPT_CHARS.
+
+1. constants.ts INITIAL_CONFIG: outfitPreset becomes 'custom' (the free-text wardrobe). Keep every other default as it is now.
+
+2. services/promptBuilder.ts getOutfitDescription: for every preset other than custom, when outfitDesc is not empty, the sentence " Details that take priority over the base garments: <outfitDesc>." becomes " Wherever these details conflict with the base garments, draw only these details: <outfitDesc>." Nothing else changes: the custom branch stays "Wardrobe: <outfitDesc>" written once, the empty case stays as it is.
+
+3. Do not touch any other line of any file. In particular leave describeHairColor exactly as it is.
+
+Return the changed files. CHECK: types compile; the default preset is custom; with another preset a typed outfit is introduced by "draw only these details".

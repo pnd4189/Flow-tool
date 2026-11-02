@@ -1,0 +1,6 @@
+CORRECT ONE HINT TEXT. A real measurement showed that keeping the best of 3 candidates takes about 120 s for one image (a single shot takes about 35 s), so the hint that says it is only 20-40 s slower is wrong. Edit only services/i18n.ts and change only the two hint_qc_candidates values; do not touch any other key, any other file or any other line.
+
+1. hint_qc_candidates (vi): 'Tạo K ảnh cùng lúc, chấm điểm từng ảnh và chỉ giữ ảnh tốt nhất. Đo thật: 3 bản thử mất khoảng 2 phút cho một ảnh (1 bản chỉ ~35 giây) và chỉ nâng điểm khớp khuôn mặt vài điểm. 1 là tắt.'
+2. hint_qc_candidates (en): 'Generates K sheets at once, scores each and keeps only the best. Measured: 3 candidates take about 2 minutes for one image (a single shot takes about 35 s) and raise the face-match score by only a few points. 1 is off.'
+
+Return the changed file. CHECK: types compile; the hint now states the measured cost.

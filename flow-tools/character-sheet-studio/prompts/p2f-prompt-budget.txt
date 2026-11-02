@@ -1,0 +1,11 @@
+ENFORCE A PROMPT BUDGET. Measured on Flow: a 3,097-character prompt with one reference image generates, while prompts of 4,190 and 4,300 characters are rejected within milliseconds with the generic "Dịch vụ tạo hình ảnh không hoạt động". Prompts must stay well below that. Edit only services/promptBuilder.ts, services/faceDna.ts (formatFaceDna) and services/translate.ts; keep every export; same sandbox rules.
+
+1. services/promptBuilder.ts:
+ a) export const MAX_PROMPT_CHARS = 3400.
+ b) Tighten the fixed wording so the default config without references is at most 2600 characters: shorten the style snippets, layout descriptions, consistency rules, costume presets and composition notes, keeping their meaning. Keep these exact elements because other behaviour relies on them: "not photorealistic" in the 2D styles, the sentence "Canvas aspect ratio X.", the "Reference image(s) ..." wording, "never write them as text", "never as labels or writing", and the final no-text sentence (no text, no captions, no callouts, no arrows, no handwriting, no labels, no watermarks, no rulers) which must stay the LAST sentence.
+ c) Clip user text before it enters the prompt, at a word boundary: roleOccupation 80 characters, distinctiveFeatures 160, outfitDescription 240, colorPalette 80, extraNotes 240, faceDna 420, outfitDna 360.
+ d) Final guard: if the prompt is still longer than MAX_PROMPT_CHARS, drop optional parts in this order until it fits: extraNotes, outfitDna details, the accessory sentence, distinctive features, role. Never drop the layout, the aspect ratio, the reference numbering or the final no-text sentence.
+2. services/faceDna.ts: formatFaceDna(dna) returns at most 420 characters: the summary first, then the non-empty details in this order: distinctiveMarks, hair, skinTone, eyes, faceShape, nose, lips, brows, facialHair, ageImpression, each as "key: value", clipped at a word boundary so the summary is the last thing to be cut.
+3. services/translate.ts: tell the translator to answer with at most 25 words per field (the system instruction must contain "at most 25 words").
+
+Return the changed file list. CHECK: types compile; with a Vietnamese description and a locked face, the diagnostics log shows promptChars below 3400 and the image is generated.

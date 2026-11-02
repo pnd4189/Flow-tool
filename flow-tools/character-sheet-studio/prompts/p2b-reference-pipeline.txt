@@ -1,0 +1,17 @@
+CONNECT THE REFERENCE SERVICES TO GENERATION. NO new visual UI in this step. Keep everything that exists; edit only what is listed; same sandbox rules.
+
+Problem to avoid: lockFace() only updates React state, so generation code reading that state right after would see stale data. Put the logic in a pure service and use its RETURN VALUES.
+
+1. New services/referencePipeline.ts: export async function prepareGenerationRefs(input: { faceSource: 'ai' | 'upload'; faceRefs: RefImage[]; outfitRefs: RefImage[]; faceDna: FaceDna | null; outfitDna: string; faceLocked: boolean; onStage?: (stage: 'uploading' | 'analyzing') => void }): Promise<{ referenceMediaIds: string[]; promptRefs: PromptRefs; faceRefs: RefImage[]; outfitRefs: RefImage[]; faceDna: FaceDna | null }>.
+ - Face images are used only when faceSource is 'upload'; otherwise they are neither uploaded nor analysed.
+ - Report 'uploading' once, then ensureUploaded for every used ref that has no mediaId (upload sequentially, one at a time); an upload error propagates.
+ - If faces are used and (not faceLocked or faceDna is null), report 'analyzing' and call describeFace; otherwise keep the given faceDna (the user may have edited it).
+ - referenceMediaIds = buildReferenceIds(usedFaces, outfits) (faces first, ids that are empty are dropped).
+ - promptRefs.faceCount and outfitCount are the number of ids actually sent for each kind (derive them from the ids, NOT from the array lengths); promptRefs.faceDna = formatFaceDna(dna) when faces are sent; promptRefs.outfitDna = input.outfitDna when outfits are sent.
+ - Return the updated refs and faceDna so the UI can store them.
+2. hooks/useReferences.ts: add applyPrepared({ faceRefs, outfitRefs, faceDna }) that stores them and sets faceLocked true when faceDna came back; lockFace() must RETURN { faceRefs, faceDna } on success and null on failure (it still updates state); remove the stale-closure risks (use functional state updates where you read previous values).
+3. hooks/useGeneration.ts: run(config, refs): after translation, call prepareGenerationRefs with the current refs state, map its stages to job stages 'uploading' and 'analyzing' (add them to the GenerationJob stage type, progress texts "Đang tải ảnh tham chiếu lên Flow" and "Đang phân tích khuôn mặt"), call refs.applyPrepared with the result, then buildSheetPrompt(translatedConfig, promptRefs) and generateSheetImage with referenceMediaIds. Store referenceMediaIds as HistoryItem.refMediaIds (string[]). Do this ONCE per run, not once per image.
+4. StickyFooter: when faceSource is 'upload' and there is no face image, disable the main button and show the hint "Thêm ít nhất 1 ảnh khuôn mặt hoặc chuyển sang AI tự tạo" under it.
+5. i18n: the new texts in both languages, identical keys, no inline language ternaries.
+
+Return the list of changed and new files. CHECK: types compile.

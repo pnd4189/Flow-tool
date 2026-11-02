@@ -1,0 +1,7 @@
+FIX LAYOUT C. Its tile says "Mẫu A + 4 biểu cảm" and the reference tool shows exactly that sheet (large portrait, three full-body views front, side and back, and four expression vignettes), but a real run drew only two full-body views (front and side) because the layout text asks for "front and side full-body views". Edit only services/promptBuilder.ts (layout descriptions) and services/qc.ts (expectedViewCount); keep every export and stay inside MAX_PROMPT_CHARS.
+
+1. services/promptBuilder.ts getLayoutDescription for layout_c, all orientations: same as layout A (large head-and-shoulders portrait plus THREE full-body views: front, side profile, back, same scale, feet aligned) plus FOUR expression vignettes (neutral, joyful smile, serious, surprise) of the same face. Landscape: portrait on the left, the three full-body views top right, the four expression vignettes in one row at the bottom right. Square and portrait canvases (never use the words left or right there): portrait on top, the three full-body views in a row below, the four expression vignettes in one row at the bottom. Each description under 480 characters.
+2. services/qc.ts expectedViewCount('layout_c') becomes 8 (1 portrait + 3 bodies + 4 expressions); the other layouts keep their counts.
+3. Touch nothing else (the constants label "Mẫu A + 4 biểu cảm" is already right).
+
+Return the changed files. CHECK: types compile; layout C now shows the portrait, three full-body views and four expressions.

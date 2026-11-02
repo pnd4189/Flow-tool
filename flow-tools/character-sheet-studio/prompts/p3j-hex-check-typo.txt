@@ -1,0 +1,3 @@
+FIX ONE TYPO YOU INTRODUCED. In services/promptBuilder.ts, function describeHairColor, the validity check now reads isNaN(r) || isNaN(r) || isNaN(b), so a bad green channel (for example #00zz00) is no longer rejected. It must be isNaN(r) || isNaN(g) || isNaN(b), exactly as before. Change only that one condition and nothing else in any file; do not touch the layout wording, the defaults or any other line.
+
+Return the changed file. CHECK: types compile; describeHairColor returns natural dark for a bad red, green or blue channel.

@@ -1,0 +1,9 @@
+FIX LAYOUT B ARRANGEMENT. Layout B ("Mẫu A + 3 góc mặt") never says where the three facial angle close-ups go, so real runs drew them stacked in a column once and as circles overlapping the portrait once, while the reference tool always draws a large portrait on the left, the three face close-ups side by side in a row above, and the three full-body views side by side in a row below. Edit only services/promptBuilder.ts (getLayoutDescription, layout_b cases); keep every export and stay inside MAX_PROMPT_CHARS.
+
+1. Landscape layout_b: "Model Sheet Layout B: Left 40% large head-and-shoulders portrait showing the collar and upper garment; Right 60% in two rows: the top row has three facial angle close-ups side by side (3/4 left, profile, 3/4 right), the bottom row has three full-body views (front, profile, back) side by side at identical scale with feet aligned on ground plane. No panel overlaps another."
+
+2. Square and portrait layout_b, never using the words left or right: "Model Sheet Layout B: Top section has a large head-and-shoulders portrait showing the collar and upper garment; the middle row has three facial angle close-ups side by side (3/4 left, profile, 3/4 right); the bottom row has three full-body views (front, profile, back) side by side at identical scale with feet aligned on ground plane. No panel overlaps another."
+
+3. Touch nothing else: layouts A, C, D, E, F and every other file stay exactly as they are. In particular leave describeHairColor and getOutfitDescription untouched.
+
+Return the changed file. CHECK: types compile; layout B places the close-ups in a row above the full-body views.

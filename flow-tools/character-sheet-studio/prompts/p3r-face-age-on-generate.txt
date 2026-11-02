@@ -1,0 +1,15 @@
+FIX AGE AND GENDER WHEN GENERATING STRAIGHT FROM A PHOTO. A real run with a reference photo of a woman of about 60 drew a visibly younger woman in 1 of 3 sheets, because the face analysis result (gender and age group guess) is only applied to the config when the user presses the "lock face" button, so generating directly kept the default "young adult in 20s, age 24" in the prompt. Edit only services/faceDna.ts and hooks/useGeneration.ts (the main run function only; do NOT touch the variant flow or any other file).
+
+1. services/faceDna.ts: add and export this function next to faceDnaToConfigPatch (keep everything else):
+
+export function applyFaceDnaToConfig(config: CharacterConfig, dna: FaceDna | null): CharacterConfig {
+  if (config.faceSource !== 'upload') return config;
+  const patch = faceDnaToConfigPatch(dna);
+  return Object.keys(patch).length === 0 ? config : { ...config, ...patch };
+}
+
+2. hooks/useGeneration.ts, main run function: declare let preparedFaceDna: FaceDna | null = null; before the "if (refs)" reference-preparation block; inside that block, after prepareGenerationRefs returns, set preparedFaceDna = prepResult.faceDna; then build the prompt with buildSheetPrompt(applyFaceDnaToConfig(promptReadyConfig, preparedFaceDna), promptRefsParam) instead of buildSheetPrompt(promptReadyConfig, promptRefsParam). Import applyFaceDnaToConfig from '../services/faceDna'. Do not change the config state shown in the UI and do not change anything else.
+
+3. Touch nothing else. Keep every export.
+
+Return the changed files. CHECK: types compile; age and gender follow the face analysis when generating from a photo.

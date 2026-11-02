@@ -1,0 +1,7 @@
+SMALL REFACTOR, no behaviour change. services/qc.ts appendRetryAddendum hard-codes the final no-text sentence as a second copy of the one inside services/promptBuilder.ts; if either is edited the retry text would silently end up AFTER the no-text rule.
+
+1. services/promptBuilder.ts: export const FINAL_NO_TEXT_SENTENCE = '<the exact current final sentence>' and use it in buildSheetPrompt (and in the budget guard) instead of an inline literal. The sentence stays the last sentence of every prompt.
+2. services/qc.ts: import FINAL_NO_TEXT_SENTENCE and use it in appendRetryAddendum instead of the local literal. If the prompt does not end with it, append the addendum at the end but still within MAX_PROMPT_CHARS.
+3. Touch nothing else.
+
+Return the changed file list. CHECK: types compile.

@@ -1,0 +1,23 @@
+ADD THE REFERENCE-IMAGE SERVICES (faces and outfits). NO UI in this step. Keep everything that exists; edit only what is listed; same sandbox rules (no localStorage, confirm/alert/prompt, <a download>, ZIP).
+
+types.ts: add RefKind = 'face' | 'outfit'; RefImage { id, kind, name, thumb (data URL, 160 px), base64 (downscaled JPEG), mimeType, mediaId: string | null, source: 'file' | 'library', status: 'ready' | 'uploading' | 'error', error?: string }; FaceDna { summary: string; details: { faceShape, eyes, brows, nose, lips, skinTone, hair, facialHair, ageImpression, distinctiveMarks: string } }; PromptRefs { faceCount: number; faceDna?: string; outfitCount: number; outfitDna?: string }. Reference images are NOT stored inside CharacterConfig (it is copied into every history item).
+
+services/refImages.ts (export exactly these):
+- MAX_FACE_REFS = 3; MAX_OUTFIT_REFS = 4.
+- validateFile(file: { name: string; type: string; size: number }): { ok: true } | { ok: false; error: string }. Accept image/png, image/jpeg, image/webp up to 12 MB. Vietnamese error text; the too-large message must contain "12".
+- fitWithin(width, height, maxSide): { width, height } keeps the aspect ratio, rounds, never upscales.
+- prepareRefImage(input: File | { base64: string; mimeType: string; name?: string; mediaId?: string }, kind: RefKind): Promise<RefImage>. A File is decoded with createImageBitmap(file, { imageOrientation: 'from-image' }), downscaled with fitWithin(…, 1536), re-encoded as JPEG quality 0.92 on a canvas, thumbnail 160 px. An object input (from the Flow library) keeps its mediaId and source 'library'.
+- ensureUploaded(ref): Promise<RefImage>: when mediaId is null call Flow.upload({ base64, mimeType, name }) and keep the returned mediaId; otherwise return the ref unchanged.
+
+services/faceDna.ts:
+- describeFace(refs: RefImage[]): Promise<FaceDna>. One Flow.generate.text call with images: refs.map(r => ({ base64: r.base64, mimeType: r.mimeType })). System instruction: describe only the visible facial features for an illustrator, neutral and factual, no names, no guesses about who the person is; reply with ONLY a JSON object with keys summary (one English sentence), faceShape, eyes, brows, nose, lips, skinTone, hair, facialHair, ageImpression, distinctiveMarks. Strip code fences; tolerant parse: missing keys become '' and an unparseable reply returns { summary: '', details with all '' } without throwing. A failed Flow call or a 60 s timeout rejects with an Error.
+- describeOutfit(refs: RefImage[]): Promise<string>: same approach, returns one English paragraph about garments, colours, materials, accessories and footwear (no names), cleaned of fences and quotes.
+- formatFaceDna(dna: FaceDna): string builds one English paragraph from the summary and the non-empty details; empty dna gives ''.
+
+services/referenceIds.ts: buildReferenceIds(faceRefs: RefImage[], outfitRefs: RefImage[]): string[]: face ids first, then outfit ids; only refs with a mediaId; unique; at most 10.
+
+services/promptBuilder.ts: buildSheetPrompt(config, refs?: PromptRefs). Face references count only when config.faceSource === 'upload' and refs.faceCount > 0: write "Reference images 1-N show the person's real face" (or "Reference image 1" for one) and ask to reproduce that face faithfully (face shape, eyes, nose, lips, skin tone, hairline) in the chosen style, recognisable at first glance; for the 2D styles also say to translate the real features into the style while keeping them recognisable; append faceDna when given. When refs.outfitCount > 0 write "Reference image(s) k..m show the outfit" with numbering that continues after the faces actually used (starting at 1 when no face is used), ask to recreate the same garments, colours and details, and append outfitDna. Never mention names. When refs is omitted the output stays as today.
+
+hooks/useReferences.ts: faceRefs, outfitRefs, faceDna (FaceDna | null), outfitDna (string), faceLocked, addFiles(kind, files: File[]) (validate, respect the limits, prepare, report rejected files), addFromLibrary(kind) (Flow.media.select({ filter: 'image' }) then prepareRefImage), remove(id), lockFace() (ensureUploaded for every face, then describeFace, set faceDna and faceLocked, on failure keep unlocked and expose an error), unlockFace(), setFaceDna(dna), setOutfitDna(text), analyzeOutfit() (ensureUploaded + describeOutfit), error state.
+
+Return the list of changed and new files. CHECK: types compile.

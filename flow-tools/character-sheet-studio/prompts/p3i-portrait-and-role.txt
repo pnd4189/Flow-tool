@@ -1,0 +1,9 @@
+FIX THE PORTRAIT FRAMING AND THE LAST HIDDEN DEFAULT. In a real run layout A drew the close-up portrait as a bare head and neck, so the outfit was missing from it, while the reference tool draws the portrait from the shoulders up with the collar and the top of the garment visible. Also the default role "Kỹ sư công nghệ & Thám tử tự do" made the model add a briefcase nobody asked for. Edit only services/promptBuilder.ts (getLayoutDescription) and constants.ts (INITIAL_CONFIG); keep every export and stay inside MAX_PROMPT_CHARS.
+
+1. services/promptBuilder.ts getLayoutDescription, every orientation (landscape and square/portrait, and the default fallback branches): for layouts A, B and C the portrait becomes "large head-and-shoulders portrait showing the collar and upper garment" (layout B keeps its three facial angle close-ups, layout C keeps its three full-body views and four expression vignettes). Change only the portrait wording; layouts D, E and F stay exactly as they are. Keep the landscape wording with left/right and the square/portrait wording with top/bottom, never mixed.
+
+2. constants.ts INITIAL_CONFIG: roleOccupation becomes the empty string (the placeholder already shows examples). Keep every other default.
+
+3. Touch nothing else.
+
+Return the changed files. CHECK: types compile; layouts A, B and C ask for a head-and-shoulders portrait with the upper garment; the role starts empty.

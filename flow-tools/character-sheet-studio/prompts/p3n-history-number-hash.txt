@@ -1,0 +1,3 @@
+RESTORE ONE CHARACTER YOU REMOVED. In components/HistoryStrip.tsx the history item number used to render as #{itemNumber} (for example #1, #2) and now renders as {itemNumber} without the hash. Put the hash back so the span reads #{itemNumber} again. Change only that one span and nothing else in any file; do not touch the quality-check badge, the pending badge or any other line.
+
+Return the changed file. CHECK: types compile; the history items are numbered #1, #2 again.

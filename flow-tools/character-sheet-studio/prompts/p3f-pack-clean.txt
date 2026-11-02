@@ -1,0 +1,6 @@
+FIX TWO PROBLEMS IN THE CHARACTER PACK (measured on a real download). Edit only services/pack.ts and the handler of the "Gói nhân vật" button; keep every export; same sandbox rules; i18n in both languages.
+
+1. The pack promises English values but the free-text fields (role, distinctive marks, outfit details, palette) were written out untranslated in Vietnamese. In the button handler run `await translateConfigFields(config)` first (show the button as busy while it runs; on failure fall back to the original text) and build the pack from the translated config.
+2. The one-paragraph "CHARACTER:" block repeats itself: it contains the whole identity paragraph (with the labels "Heritage:", "Accessories:", "Distinctive marks:") and then repeats hair and expression again, and ends with a double full stop. Rewrite the block as clean prose, each fact once, in this order: name and @tag, gender, age and build, face (the face description, or ethnicity words), hair, expression, accessories and distinctive marks, outfit, style. No section labels inside the block, no "..". The sectioned part above it keeps its labels.
+
+Return the changed files. CHECK: types compile; pressing Gói nhân vật saves a text file whose values are English and whose CHARACTER paragraph mentions hair once.

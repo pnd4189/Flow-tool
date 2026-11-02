@@ -1,0 +1,13 @@
+FIX LAYOUTS E AND F. Live runs of layout E ("Chỉ cận cảnh chân dung") drew a full-body figure next to the busts in 2 of 3 sheets, and layout F drew 7 to 8 panels instead of 6 every time, because the text only says "upper-body sheet" and "2x3 grid". Edit only services/promptBuilder.ts (getLayoutDescription, the layout_e and layout_f cases); keep every export and stay inside MAX_PROMPT_CHARS.
+
+1. Landscape layout_e: "Model Sheet Layout E: Exactly three head-and-shoulders bust studies side by side on one canvas: three-quarter view, front view and profile view, all at the same scale and cropped at the chest. Busts only: no full-body figure, no legs, no extra panels."
+
+2. Square and portrait layout_e, never using the words left or right: "Model Sheet Layout E: Exactly three head-and-shoulders bust studies in one column: three-quarter view on top, front view in the middle, profile view at the bottom, all at the same scale and cropped at the chest. Busts only: no full-body figure, no legs, no extra panels."
+
+3. Landscape layout_f: "Model Sheet Layout F: A grid of exactly six equal panels in two rows of three columns; each panel shows one head-and-shoulders bust of the same face in this order: neutral, smile, stern, laughter, sadness, surprise. Exactly six panels: no seventh or eighth panel, no full-body figure."
+
+4. Square and portrait layout_f, never using the words left or right: "Model Sheet Layout F: A grid of exactly six equal panels in three rows of two columns; each panel shows one head-and-shoulders bust of the same face in this order: neutral, smile, stern, laughter, sadness, surprise. Exactly six panels: no seventh or eighth panel, no full-body figure."
+
+5. Touch nothing else: layouts A, B, C, D and every other file and function stay exactly as they are.
+
+Return the changed file. CHECK: types compile; layout E asks for exactly three busts and layout F for exactly six panels.

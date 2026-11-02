@@ -1,0 +1,56 @@
+ADD "BEST OF K CANDIDATES". Today each image is one single shot. Add an optional quality setting: generate K candidates of the same sheet in parallel, run the quality check on each, and keep only the best one. K = 1 means off and behaves exactly like today. Edit only the files listed below; do NOT touch the variant flow, services/qc.ts, services/generation.ts or any other file.
+
+1. services/takePipeline.ts: keep everything that exists and append exactly this (add decideRetry to the existing import from './qc'):
+
+export interface BestOfOptions { prompt: string; count: number; minScore: number; strictFace: boolean; isAborted: () => boolean; }
+export interface BestOfResult { sheet: TakeSheet; report: QcReport | null; candidates: number; }
+
+export function rankCandidate(report: QcReport | null, opts: { minScore: number; strictFace: boolean }): number {
+  if (!report || !report.available) return 0;
+  const flagged = decideRetry(report, { minScore: opts.minScore, strictFace: opts.strictFace }).retry;
+  const quality = report.faceMatch !== null ? report.faceMatch + report.score * 0.2 : report.score;
+  return (flagged ? 0 : 1000) + quality;
+}
+
+export async function runBestOf(deps: TakeDeps, options: BestOfOptions): Promise<BestOfResult> {
+  const count = Math.max(1, Math.floor(options.count));
+  const settled = await runWithConcurrency(count, count, async () => {
+    const sheet = await deps.generate(options.prompt);
+    let report: QcReport | null = null;
+    if (!options.isAborted()) {
+      try { report = await deps.inspect(sheet); } catch { report = null; }
+    }
+    return { sheet, report };
+  });
+  const made: Array<{ sheet: TakeSheet; report: QcReport | null }> = [];
+  let firstError: unknown = null;
+  for (const item of settled) {
+    if (item.status === 'fulfilled') made.push(item.value);
+    else if (firstError === null) firstError = item.reason;
+  }
+  if (made.length === 0) throw firstError ?? new Error('No candidate was generated');
+  let best = made[0];
+  let bestRank = rankCandidate(best.report, options);
+  for (const candidate of made.slice(1)) {
+    const rank = rankCandidate(candidate.report, options);
+    if (rank > bestRank) { best = candidate; bestRank = rank; }
+  }
+  return { sheet: best.sheet, report: best.report, candidates: made.length };
+}
+
+2. types.ts: add an OPTIONAL field qcCandidates?: number; (1-4, 1 = off) to CharacterConfig, right after qcMaxRetries. Optional, so no other object literal needs to change.
+
+3. constants.ts INITIAL_CONFIG: add qcCandidates: 1 right after qcMaxRetries.
+
+4. services/session.ts validateAndMergeConfig: right after the qcMaxRetries block add: if raw.qcCandidates is a number and not NaN, base.qcCandidates = Math.max(1, Math.min(4, Math.round(raw.qcCandidates))). A missing value keeps the default.
+
+5. services/i18n.ts: add two keys next to lbl_qc_retries in both languages: lbl_qc_candidates = 'Số bản thử để chọn bản tốt nhất' (vi) and 'Candidates, best one is kept' (en), and hint_qc_candidates = 'Tạo K ảnh cùng lúc, chấm điểm từng ảnh và chỉ giữ ảnh tốt nhất. Chậm hơn khoảng 20-40 giây; 1 là tắt.' (vi) and 'Generates K sheets at once, scores each and keeps only the best. About 20-40 s slower; 1 is off.' (en). Keep the key sets identical in both languages.
+
+6. components/SectionFraming.tsx: below the existing "Retries Stepper" block add a second stepper in the same style for qcCandidates: label t(lang, 'lbl_qc_candidates'), the hint t(lang, 'hint_qc_candidates') as the title attribute of the block, value (config.qcCandidates ?? 1), range 1 to 4, minus and plus buttons disabled at the limits and when !config.qcEnabled, with a handler like handleRetriesChange that calls onChange({ qcCandidates: next }). The whole block is dimmed and not clickable when !config.qcEnabled, like the retries block. Change nothing else in the file.
+
+7. hooks/useGeneration.ts, the main run function only. Inside run, compute const candidates = config.qcEnabled ? Math.max(1, Math.min(4, config.qcCandidates ?? 1)) : 1; before the parallel takes. Then:
+   - call runWithConcurrency(total, candidates > 1 ? Math.max(1, Math.floor(4 / candidates)) : total, ...) instead of runWithConcurrency(total, total, ...);
+   - the setJob call before the takes uses stageDetail: candidates > 1 ? candidates + ' bản thử mỗi ảnh, chọn bản tốt nhất' : (the current value);
+   - inside each take, when candidates > 1, do NOT call runTake; instead call runBestOf(deps, { prompt: takePrompt, count: candidates, minScore: 65, strictFace: config.faceFidelity === 'strict', isAborted: () => abortRequestedRef.current }) with the same deps object, and when it resolves: make the thumbnail with makeThumbnail(best.sheet.base64, best.sheet.mimeType, 420), build the HistoryItem exactly like the one built in onFirstImage but with promptUsed/mediaId/mimeType/base64/rewriteRound from best.sheet, qc: best.report ?? undefined, qcAttempts: candidates - 1 and qcPending: false, insert it with the same setHistory eviction code, setSelectedId(itemId), increment job.done, then resolve(); when it rejects, reject(error). Put the shared "build and insert the history item" code into one local helper used by both paths instead of duplicating it. When candidates is 1 everything behaves exactly as today.
+
+8. Touch nothing else. Keep every export. Return the changed files. CHECK: types compile; with candidates above 1 only the best-scoring sheet of K is kept.

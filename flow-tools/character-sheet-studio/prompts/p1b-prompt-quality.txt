@@ -1,0 +1,16 @@
+FIX AND IMPROVE the prompt builder and i18n. Edit only the places listed; do NOT rewrite files; keep every other feature unchanged. Same sandbox rules as before (no localStorage, confirm/alert/prompt, <a download>, ZIP).
+
+1. Hard-coded Vietnamese must go through i18n. In constants.ts: VISUAL_STYLES[].badge becomes badgeKey (add keys such as style_badge_popular / style_badge_cinematic ... in BOTH dictionaries: "Phổ biến"/"Popular", "Điện ảnh"/"Cinematic", etc.); PRESET_HAIR_COLORS[].label becomes labelKey (hair_color_black, hair_color_dark_brown, hair_color_chestnut, hair_color_platinum, hair_color_straw, hair_color_burgundy, hair_color_azure, both languages); SHEET_LAYOUTS[].composition becomes compositionKey. Update every component that renders them. ConfigChips: the small subtitle under each chip must show the TRANSLATED label of the choice (for example "Người Việt", "Phổ biến"), never a raw id such as "vietnamese".
+
+2. services/promptBuilder.ts (pure functions, keep exports buildSheetPrompt and sanitizeTag):
+ a) Correct article before gender: "a male", "a female", "an androgynous".
+ b) Remove all studio and brand names from the style snippets (Pixar, DreamWorks, Hasselblad, Octane, ...) and use generic wording such as "feature animation film quality" or "portrait lens".
+ c) Never write a hex code in the hair phrase. Add describeHairColor(hex): the 7 preset hexes map to jet black, deep brown, chestnut brown, platinum blonde, straw blonde, burgundy red, azure blue; any other hex maps to the nearest of these by RGB distance.
+ d) State the canvas aspect ratio in the prompt, for example "Canvas aspect ratio 16:9."
+ e) The layout text depends on orientation. Add orientationOf(aspect): landscape for 16:9 and 4:3, square for 1:1, portrait for 3:4 and 9:16. Landscape keeps the current wording (left/right split). For square and portrait NEVER use the words left or right. A: top ~35% large head-and-shoulders portrait, bottom ~65% three full-body views in a row (front, side profile, back), same scale, feet aligned. B: like A plus three facial-angle close-ups (3/4, profile, tilt) in a row beside the portrait at the top. C: front and side full-body views on top, 4 expression vignettes in one row below. D: five full-body views in two rows (three above, two below, centred). E: three bust studies stacked top to bottom (3/4, front, profile). F: a 2-column by 3-row grid of 6 expression busts. Each portrait/square description must be unambiguous and under 450 characters.
+
+3. Keep the six layout ids and all option catalogues unchanged.
+
+Return the list of changed files.
+
+CHECK: types compile; the Xem prompt modal shows "Canvas aspect ratio ..."; switching to 9:16 changes the layout wording; chips show Vietnamese labels; the EN toggle shows every badge and hair colour in English.

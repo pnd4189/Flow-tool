@@ -1,0 +1,11 @@
+FIX HIDDEN DEFAULTS AND THE OUTFIT WORDING. A real run drew a mole, glasses and a bag on a character who never asked for them, a 2D-only note ("head ratio 7.5, line weight 2px") leaked into a photoreal sheet, and the typed outfit is written twice in the prompt. Edit only constants.ts (INITIAL_CONFIG) and services/promptBuilder.ts (getOutfitDescription); keep every export and stay inside MAX_PROMPT_CHARS.
+
+1. constants.ts INITIAL_CONFIG: accessories becomes an empty array, and distinctiveFeatures, outfitDescription, colorPalette and extraNotes all become the empty string. Keep every other default (style, layout, gender, outfit preset, footwear, model...). The i18n placeholders already show examples, so nothing else changes.
+
+2. services/promptBuilder.ts getOutfitDescription:
+   - preset custom (and the default branch): when outfitDesc is not empty write it exactly once as "Wardrobe: <outfitDesc>" and do NOT append the separate " Details: ..." sentence again; when it is empty keep "Distinctive character wardrobe". Footwear and palette stay as they are.
+   - every other preset (ao_dai, ao_ba_ba, school_uniform, business, streetwear, fantasy_armor, scifi_suit, casual): when outfitDesc is not empty, replace the " Details: <outfitDesc>." sentence with " Details that take priority over the base garments: <outfitDesc>." so a typed outfit wins over the preset garment list; when it is empty nothing changes.
+
+3. Touch nothing else.
+
+Return the changed files. CHECK: types compile; the defaults start empty; a typed outfit appears once and wins over the preset.

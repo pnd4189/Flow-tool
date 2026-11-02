@@ -1,0 +1,1 @@
+# tsc runs with --strictNullChecks for this tool (see flow-tools/_shared/scripts/check-snapshot.sh)
