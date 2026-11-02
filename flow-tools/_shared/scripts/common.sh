@@ -31,3 +31,12 @@ guard() {
 }
 
 ref() { $AB snapshot -i 2>&1 | grep -E "$1" | head -1 | sed -E 's/.*ref=(e[0-9]+).*/\1/'; }
+
+# A hidden tab (another tab in front) freezes the page: the builder's send button and clicks silently do
+# nothing. Make the pinned tab the visible one again; no-op when it already is.
+ensure_visible() {
+  [ "$($AB eval 'document.visibilityState' 2>/dev/null | tr -d '"' | tail -1)" = "visible" ] && return 0
+  local id; id=$($AB tab list 2>&1 | grep -E '^\s*→' | sed -E 's/.*\[(t[0-9]+)\].*/\1/' | head -1)
+  [ -n "$id" ] && $AB tab "$id" >/dev/null 2>&1
+  return 0
+}

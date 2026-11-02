@@ -32,6 +32,10 @@ Rút ra từ 3 tool đã làm (Image to Video Studio, Long-Form AI Studio, Effec
 
 ## Điều khiển Chrome an toàn
 
+- **`fill @ref ""` không xoá được ô nhập của React** trong tool đang chạy: state giữ chữ cũ nên prompt vẫn mang giá trị đó. Xoá bằng `click @ref`, `press Control+a`, `press Backspace`. Sau khi sang `frame @<iframe>` mà `send-watch.sh` báo "no textbox", chạy `frame main` rồi gửi lại.
+- **Builder hay sửa thêm dòng ngoài yêu cầu.** Sau mỗi lần trích code, diff với bản trước (`diff -r`) và sửa lại bằng một yêu cầu một dòng; đã gặp `isNaN(g)` bị đổi thành `isNaN(r)`.
+- **Tab làm việc phải đang hiển thị.** Khi có tab khác chiếm phía trước (ví dụ user mở thêm một tab Flow), tab đang điều khiển bị Chrome làm đóng băng: `document.visibilityState` thành `hidden`, nút "Bắt đầu tạo" và Enter không gửi được dù lệnh báo "Done", và `send-watch.sh` báo "stuck" với `reply_len=19` cố định (19 ký tự là chữ "close/arrow_forward" của ô nhập). Chữa: `agent-browser tab t<id>` để đưa tab lên trước (hàm `ensure_visible` trong `common.sh` làm việc đó, `send-watch.sh` gọi sẵn). Đã mất khoảng 1 giờ vì lỗi này ngày 2026-11-02.
+
 - Dùng `agent-browser --auto-connect --pin-tab`. Mỗi phiên Chrome mới phải duyệt kết nối gỡ lỗi (remote debugging) một lần; khi chưa duyệt, mọi lệnh báo "Chrome is waiting for remote-debugging approval" và các script dừng thay vì chạy bừa.
 - **Luôn kiểm tra URL của tab đang gắn trước mỗi lần điền hoặc bấm** (`guard` trong `common.sh`). Sự cố đã xảy ra: tab Vercel OAuth cướp tab hiện hành và chữ đã được điền vào ô Email của Vercel (chưa bấm nút nào, đã xoá).
 - **Dừng nếu không tìm ra ref.** `fill "@"` với ref rỗng ghi vào ô đang focus. Từng có 4 prompt bị dán nhầm vào ô chat builder; đã xoá sạch trước khi gửi.

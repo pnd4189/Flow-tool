@@ -18,10 +18,13 @@ status=0
 
 # Run tsc from inside the tool folder so every error path reads "source/...".
 cd "$TOOL_DIR" || exit 1
+# A tool opts in to --strictNullChecks by having an (empty or commented) test-scripts/strict-null-checks file.
+STRICT=()
+[ -f "$TOOL_DIR/test-scripts/strict-null-checks" ] && STRICT=(--strictNullChecks)
 mapfile -d '' SOURCES < <(find source \( -name '*.ts' -o -name '*.tsx' \) -print0)
 # TS7026/TS2786/TS2875/TS2503 only come from the JSX/react stubs, not from the tool code.
 TSC_ERRORS=$("${TSC[@]}" --noEmit --jsx preserve --target es2022 --module esnext --moduleResolution bundler \
-  --skipLibCheck --strict false --noImplicitAny false --allowImportingTsExtensions --lib es2022,dom \
+  --skipLibCheck --strict false "${STRICT[@]}" --noImplicitAny false --allowImportingTsExtensions --lib es2022,dom \
   "$KIT/tsc-stubs.d.ts" "${SOURCES[@]}" 2>&1 | grep -E 'error TS' | grep -vE 'TS7026|TS2786|TS2875|TS2503')
 # Normalise to "relative/file: TSxxxx: message" so line shifts do not count as new errors.
 TSC_ERRORS=$(printf '%s\n' "$TSC_ERRORS" | sed -E "s|^([^(]+)\([0-9]+,[0-9]+\): error (TS[0-9]+): |\1: \2: |" | grep -v '^$' | sort -u)

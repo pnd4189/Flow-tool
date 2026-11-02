@@ -33,6 +33,8 @@ Ghi ngày 2026-10-30 (một phần từ 2026-10-29), từ các phép thử thậ
   - ảnh đầu/cuối và ảnh tham chiếu loại trừ nhau;
   - đã kiểm thật: Omni 360p 4 s với ảnh đầu = mediaId của ảnh, ~40 s, trả mp4 h264 640×360 24 fps có tiếng AAC, 1,5 MB, trừ 4 credit. Chưa kiểm: Veo, 720p, 8–10 s, 9:16 kèm cắt, nhiều biến thể.
 
+- **Độ dài prompt ảnh có giới hạn.** Đo 2026-11-02 trên `Flow.generate.image` (Nano Banana Pro, có 1 ảnh tham chiếu): prompt 3.097 ký tự chạy bình thường (~28 s), prompt 4.190 và 4.300 ký tự bị từ chối sau 9–15 ms với thông báo chung "Dịch vụ tạo hình ảnh không hoạt động. Hãy thử lại." (cùng thông báo như khi dùng model Imagen không tồn tại). Giữ prompt dưới khoảng 3.400 ký tự; ranh giới chính xác nằm giữa 3.097 và 4.190, chưa đo.
+- Ảnh tham chiếu: ảnh người dùng tải lên qua `Flow.upload` (JPEG) lấy `mediaId` rồi truyền vào `referenceImageMediaIds` chạy được; `mediaId` của ảnh Flow tạo ra trước đó cũng dùng làm tham chiếu được. `Flow.generate.text` nhận ảnh trong `options.images` (không phải đối số thứ 3).
 - Ảnh bị chặn vì chính sách báo bằng tiếng Việt: "Lượt tạo này có thể vi phạm các chính sách của chúng tôi…". Bộ dò lỗi phải khớp "vi phạm"/"chính sách", không chỉ 'safety'/'policy'. Nối danh sách negative có chữ nudity/gore/blood/celebrity vào prompt (`Avoid: …`) gây chặn oan (đo 2026-10-31). Prompt tả máu me trực tiếp lại không bị chặn, nên đừng đoán bộ lọc theo mức độ nội dung.
 
 ## Credit (Ultra)
